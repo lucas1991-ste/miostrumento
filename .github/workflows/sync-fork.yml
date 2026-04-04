@@ -2,8 +2,8 @@ name: Sync Fork with Upstream
 
 on:
   schedule:
-    - cron: '0 4 * * *'        # ogni giorno alle 4:00 UTC (puoi cambiarlo)
-  workflow_dispatch:           # permette di lanciarlo manualmente
+    - cron: '0 5 * * *'      # ogni giorno alle 5:00 UTC
+  workflow_dispatch:         # per lanciarlo manualmente
 
 jobs:
   sync:
@@ -14,11 +14,13 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: main                  # ← importante: specifica il branch
 
       - name: Sync with Upstream
-        uses: aormsby/Fork-Sync-With-Upstream-action@v3.4.2   # ← versione aggiornata
+        uses: aormsby/Fork-Sync-With-Upstream-action@v3.4.2
         with:
-          upstream_repository: realbestia1/EasyProxy          # ← CAMBIA con il repo originale
-          upstream_branch: main                               # o master se l'originale usa master
-          target_branch: main                                 # il branch del tuo fork
+          upstream_sync_repo: realbestia1/EasyProxy     # ← CAMBIA se l'upstream è diverso
+          upstream_sync_branch: main                    # branch dell'originale
+          target_sync_branch: main                      # branch del tuo fork
           target_repo_token: ${{ secrets.GITHUB_TOKEN }}
