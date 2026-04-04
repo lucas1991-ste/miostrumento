@@ -2,8 +2,8 @@ name: Sync Fork with Upstream
 
 on:
   schedule:
-    - cron: '0 3 * * *'        # ogni giorno alle 3:00 UTC (cambia se vuoi)
-  workflow_dispatch:           # ti permette di far partire manualmente dal pulsante
+    - cron: '0 4 * * *'        # ogni giorno alle 4:00 UTC (puoi cambiarlo)
+  workflow_dispatch:           # permette di lanciarlo manualmente
 
 jobs:
   sync:
@@ -15,11 +15,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Sync fork from upstream
-        uses: aormsby/Fork-Sync-With-Upstream-action@v1.0.6   # action molto stabile
+      - name: Sync with Upstream
+        uses: aormsby/Fork-Sync-With-Upstream-action@v3.4.2   # ← versione aggiornata
         with:
-          upstream_repository: realbestia1/EasyProxy     # ← CAMBIA se l'originale è stremio-manager/EasyProxy
-          upstream_branch: main                          # o master se è master
-          target_branch: main                            # il branch del tuo fork che vuoi aggiornare
-          # git_user_name: 'GitHub Action'               # opzionale
-          # git_user_email: 'action@github.com'          # opzionale
+          upstream_repository: realbestia1/EasyProxy          # ← CAMBIA con il repo originale
+          upstream_branch: main                               # o master se l'originale usa master
+          target_branch: main                                 # il branch del tuo fork
+          target_repo_token: ${{ secrets.GITHUB_TOKEN }}
