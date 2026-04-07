@@ -1,8 +1,9 @@
 services:  
   EasyProxy:
-    build: https://github.com/nzo66/EasyProxy.git#main
+    build: https://github.com/realbestia1/EasyProxy.git#main
     container_name: EasyProxy
     restart: unless-stopped
+    shm_size: "1gb"
     ports:
       - '${PORT:-7860}:${PORT:-7860}' #modifica la variabile "PORT" per cambiare la porta
     environment:

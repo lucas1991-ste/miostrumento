@@ -53,42 +53,53 @@ class GenericHLSExtractor:
 
     async def extract(self, url, **kwargs):
         # ✅ AGGIORNATO: Rimossa validazione estensioni su richiesta utente.
-        # Accetta qualsiasi URL per evitare errori con segmenti mascherati.
-        # if not any(pattern in url.lower() for pattern in ['.m3u8', '.mpd', '.ts', '.js', '.css', '.html', '.txt', 'vixsrc.to/playlist', 'newkso.ru']):
-        #     raise ExtractorError("URL non supportato (richiesto .m3u8, .mpd, .ts, .js, .css, .html, .txt, URL VixSrc o URL newkso.ru valido)")
-
         parsed_url = urlparse(url)
         origin = f"{parsed_url.scheme}://{parsed_url.netloc}"
-        headers = self.base_headers.copy()
+        
+        # DEBUG INSIDE EXTRACTOR
+        # logger.debug(f"[GenericHLSExtractor] Extracting {url}")
+        # logger.debug(f"[GenericHLSExtractor] self.request_headers: {self.request_headers}")
+
+        # Inizializza headers con User-Agent di default (in minuscolo)
+        headers = {"user-agent": self.base_headers["user-agent"]}
         
         # ✅ FIX: Non sovrascrivere Referer/Origin se già presenti in request_headers (es. passati via h_ params)
-        # GenericHLSExtractor viene usato come fallback per i segmenti, ma se abbiamo già headers specifici
-        # (come quelli di DLHD), dobbiamo preservarli e non resettarli al dominio del segmento.
-        if not any(k.lower() == 'referer' for k in self.request_headers):
-            headers["referer"] = origin
-        if not any(k.lower() == 'origin' for k in self.request_headers):
+        # Cerchiamo in modo case-insensitive
+        has_referer = False
+        has_origin = False
+        for k, v in self.request_headers.items():
+            if k.lower() == 'referer':
+                has_referer = True
+                headers["referer"] = v # Usa quello passato
+            elif k.lower() == 'origin':
+                has_origin = True
+                headers["origin"] = v # Usa quello passato
+
+        if not has_referer:
+            headers["referer"] = f"{origin}/"
+        if not has_origin:
             headers["origin"] = origin
 
-        # ✅ FIX: Ripristinata logica conservativa. Non inoltrare tutti gli header del client
-        # per evitare conflitti (es. Host, Cookie, Accept-Encoding) con il server di destinazione.
-        # Gli header necessari (Referer, User-Agent) vengono gestiti tramite i parametri h_.
-        # ✅ FIX: Prevent IP Leakage. Explicitly filter out X-Forwarded-For and similar headers.
-        # Only allow specific headers that are safe or necessary for authentication.
+        # Applica altri header passati dal proxy (h_ params)
         for h, v in self.request_headers.items():
             h_lower = h.lower()
-            # ✅ FIX DLHD: Ora accetta User-Agent passato via h_ params (contiene Chrome UA completo)
-            # Salta solo se è lo User-Agent del player (es. "Player (Linux; Android 13)")
-            # ma accetta se è un Chrome UA (contiene "Chrome" o "AppleWebKit")
+            
+            # ✅ FIX DLHD: Accetta User-Agent passato via h_ (browser vero)
             if h_lower == "user-agent":
-                # Se è un vero browser UA (ha Chrome/Safari), usalo sovrascrivendo il default
                 if "chrome" in v.lower() or "applewebkit" in v.lower():
                     headers["user-agent"] = v
                 continue
-                
-            if h_lower in ["authorization", "x-api-key", "x-auth-token", "cookie", "referer", "origin", "x-channel-key"]:
-                headers[h] = v
-            # Explicitly block forwarding of IP-related headers
-            if h_lower in ["x-forwarded-for", "x-real-ip", "forwarded", "via"]:
+            
+            if h_lower in ["referer", "origin"]:
+                continue # Già gestiti sopra
+
+            # Filtra e aggiunge solo gli header necessari/sicuri
+            if h_lower in ["authorization", "x-api-key", "x-auth-token", "cookie", "x-channel-key", "accept"]:
+                # Sovrascrive garantendo che non ci siano duplicati grazie alla chiave minuscola
+                headers[h_lower] = v
+            
+            # Blocca esplicitamente header di tracciamento IP/Proxy
+            if h_lower in ["x-forwarded-for", "x-real-ip", "forwarded", "via", "host"]:
                 continue
 
         return {

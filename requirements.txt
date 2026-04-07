@@ -8,3 +8,4 @@ lxml
 python-socks
 pycryptodome
 pydash2hls
+playwright

@@ -185,7 +185,7 @@ class ManifestRewriter:
                 return '\n'.join(rewritten_lines)
 
         # --- Logica Standard ---
-        header_params = "".join([f"&h_{urllib.parse.quote(key)}={urllib.parse.quote(value)}" 
+        header_params = "".join([f"&h_{urllib.parse.quote(key, safe='')}={urllib.parse.quote(str(value), safe='')}" 
                                 for key, value in stream_headers.items()])
         
         if api_password:
@@ -217,7 +217,7 @@ class ManifestRewriter:
                     
                     # Aggiungi header
                     key_header_params = "".join(
-                        [f"&h_{urllib.parse.quote(key)}={urllib.parse.quote(value)}" 
+                        [f"&h_{urllib.parse.quote(key, safe='')}={urllib.parse.quote(str(value), safe='')}" 
                          for key, value in stream_headers.items()]
                     )
                     proxy_key_url += key_header_params
