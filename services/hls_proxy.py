@@ -80,7 +80,9 @@ if MPD_MODE == "legacy":
     StreamWishExtractor,
     SupervideoExtractor,
     UqloadExtractor,
-) = None, None, None, None, None
+    DroploadExtractor,
+    VixCloudExtractor,
+) = None, None, None, None, None, None, None
 (
     VidmolyExtractor,
     VidozaExtractor,
@@ -256,6 +258,20 @@ try:
     logger.info("✅ UqloadExtractor module loaded.")
 except ImportError:
     logger.warning("⚠️ UqloadExtractor module not found.")
+
+try:
+    from extractors.dropload import DroploadExtractor
+
+    logger.info("DroploadExtractor module loaded.")
+except ImportError:
+    logger.warning("DroploadExtractor module not found.")
+
+try:
+    from extractors.vixcloud import VixCloudExtractor
+
+    logger.info("VixCloudExtractor module loaded.")
+except ImportError:
+    logger.warning("VixCloudExtractor module not found.")
 
 try:
     from extractors.vidmoly import VidmolyExtractor
@@ -513,6 +529,12 @@ class HLSProxy:
                             request_headers, proxies=GLOBAL_PROXIES
                         )
                     return self.extractors[key]
+                elif host == "vixcloud":
+                    if key not in self.extractors:
+                        self.extractors[key] = VixCloudExtractor(
+                            request_headers, proxies=GLOBAL_PROXIES
+                        )
+                    return self.extractors[key]
                 elif _is_sportsonline_candidate(host):
                     key = "sportsonline"
                     if key not in self.extractors:
@@ -520,7 +542,7 @@ class HLSProxy:
                             request_headers, proxies=GLOBAL_PROXIES
                         )
                     return self.extractors[key]
-                elif host == "mixdrop":
+                elif host in {"mixdrop", "m1xdrop"}:
                     if key not in self.extractors:
                         self.extractors[key] = MixdropExtractor(
                             request_headers, proxies=GLOBAL_PROXIES
@@ -607,6 +629,12 @@ class HLSProxy:
                             request_headers, proxies=GLOBAL_PROXIES
                         )
                     return self.extractors[key]
+                elif host == "dropload":
+                    if key not in self.extractors:
+                        self.extractors[key] = DroploadExtractor(
+                            request_headers, proxies=GLOBAL_PROXIES
+                        )
+                    return self.extractors[key]
                 elif host == "uqload":
                     if key not in self.extractors:
                         self.extractors[key] = UqloadExtractor(
@@ -667,6 +695,17 @@ class HLSProxy:
                         request_headers, proxies=proxy_list
                     )
                 return self.extractors[key]
+            elif "vixcloud.co/" in url.lower() and any(
+                x in url.lower() for x in ["/embed/", "/playlist/"]
+            ):
+                key = "vixcloud"
+                proxy = get_proxy_for_url("vixcloud.co", TRANSPORT_ROUTES, GLOBAL_PROXIES)
+                proxy_list = [proxy] if proxy else []
+                if key not in self.extractors:
+                    self.extractors[key] = VixCloudExtractor(
+                        request_headers, proxies=proxy_list
+                    )
+                return self.extractors[key]
             elif _is_sportsonline_candidate(url):
                 key = "sportsonline"
                 proxy = _resolve_sportsonline_proxy(url)
@@ -676,7 +715,7 @@ class HLSProxy:
                         request_headers, proxies=proxy_list
                     )
                 return self.extractors[key]
-            elif "mixdrop" in url:
+            elif "mixdrop" in url or "m1xdrop" in url:
                 key = "mixdrop"
                 proxy = get_proxy_for_url("mixdrop", TRANSPORT_ROUTES, GLOBAL_PROXIES)
                 proxy_list = [proxy] if proxy else []
@@ -858,6 +897,17 @@ class HLSProxy:
                 proxy_list = [proxy] if proxy else []
                 if key not in self.extractors:
                     self.extractors[key] = SupervideoExtractor(
+                        request_headers, proxies=proxy_list
+                    )
+                return self.extractors[key]
+            elif "dropload" in url:
+                key = "dropload"
+                proxy = get_proxy_for_url(
+                    "dropload", TRANSPORT_ROUTES, GLOBAL_PROXIES
+                )
+                proxy_list = [proxy] if proxy else []
+                if key not in self.extractors:
+                    self.extractors[key] = DroploadExtractor(
                         request_headers, proxies=proxy_list
                     )
                 return self.extractors[key]
@@ -1434,6 +1484,7 @@ class HLSProxy:
                     "available_hosts": [
                         "vavoo",
                         "vixsrc",
+                        "vixcloud",
                         "sportsonline",
                         "mixdrop",
                         "voe",
@@ -1450,6 +1501,7 @@ class HLSProxy:
                         "okru",
                         "streamwish",
                         "supervideo",
+                        "dropload",
                         "uqload",
                         "vidmoly",
                         "vidoza",
@@ -2051,6 +2103,47 @@ class HLSProxy:
                 # ✅ AGGIORNATO: Prima leggi il body, poi decidi se è un manifest
                 # DLStreams invia i manifest come 'text/txt' o 'text/css', quindi
                 # non possiamo fidarci del Content-Type. Usiamo il signature '#EXTM3U'.
+
+                is_direct_media_stream = request.path == "/proxy/stream" and (
+                    "video/" in content_type.lower()
+                    or stream_url.lower().endswith((".mp4", ".mkv", ".avi", ".mov"))
+                )
+                if is_direct_media_stream:
+                    response_headers = {}
+                    for header in [
+                        "content-type",
+                        "content-length",
+                        "content-range",
+                        "accept-ranges",
+                        "last-modified",
+                        "etag",
+                    ]:
+                        if header in resp.headers:
+                            response_headers[header] = resp.headers[header]
+
+                    set_response_header(
+                        response_headers, "Access-Control-Allow-Origin", "*"
+                    )
+                    set_response_header(
+                        response_headers,
+                        "Access-Control-Allow-Methods",
+                        "GET, HEAD, OPTIONS",
+                    )
+                    set_response_header(
+                        response_headers,
+                        "Access-Control-Allow-Headers",
+                        "Range, Content-Type",
+                    )
+
+                    response = web.StreamResponse(
+                        status=resp.status, headers=response_headers
+                    )
+                    await response.prepare(request)
+
+                    async for chunk in resp.content.iter_chunked(8192):
+                        await response.write(chunk)
+                    await response.write_eof()
+                    return response
                 
                 content_bytes = await resp.read()
                 

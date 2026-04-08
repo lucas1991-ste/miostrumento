@@ -147,7 +147,13 @@ class VixSrcExtractor:
                     return {"src": match.group(1)}
                     
             elif tag == "script":
-                # Cerca primo script tag nel body
+                # Cerca TUTTI gli script tag e restituisce quello che contiene window.masterPlaylist
+                scripts = re.findall(r'<script[^>]*>(.*?)</script>', html_content, re.DOTALL | re.IGNORECASE)
+                for s in scripts:
+                    if "window.masterPlaylist" in s or "'token':" in s:
+                        return s
+                
+                # Fallback: primo script nel body (vecchia logica)
                 pattern = r'<body[^>]*>.*?<script[^>]*>(.*?)</script>'
                 match = re.search(pattern, html_content, re.DOTALL | re.IGNORECASE)
                 if match:
@@ -250,16 +256,22 @@ class VixSrcExtractor:
             
             # Estrai parametri dallo script JavaScript
             try:
-                token_match = re.search(r"'token':\s*'(\w+)'", script_content)
-                expires_match = re.search(r"'expires':\s*'(\d+)'", script_content)
-                server_url_match = re.search(r"url:\s*'([^']+)'", script_content)
+                token_match = re.search(r"['\"]token['\"]\s*:\s*['\"](\w+)['\"]", script_content)
+                expires_match = re.search(r"['\"]expires['\"]\s*:\s*['\"](\d+)['\"]", script_content)
+                server_url_match = re.search(r"url\s*:\s*['\"]([^'\"]+)['\"]", script_content)
                 
                 if not all([token_match, expires_match, server_url_match]):
-                    raise ExtractorError("Missing parameters in JS script")
+                    logger.warning("Could not find all parameters with strict regex, trying flexible search...")
+                    # Fallback pattern più generico
+                    token_match = token_match or re.search(r"token['\"]\s*:\s*['\"]([^'\"]+)['\"]", script_content)
+                    expires_match = expires_match or re.search(r"expires['\"]\s*:\s*['\"](\d+)['\"]", script_content)
+                
+                if not all([token_match, expires_match, server_url_match]):
+                    raise ExtractorError("Missing mandatory parameters in JS script (token/expires/url)")
                 
                 token = token_match.group(1)
                 expires = expires_match.group(1)
-                server_url = server_url_match.group(1)
+                server_url = server_url_match.group(1).replace("\\/", "/") # De-escape forward slashes
                 
                 # Costruisci URL finale
                 if "?b=1" in server_url:
@@ -267,9 +279,16 @@ class VixSrcExtractor:
                 else:
                     final_url = f"{server_url}?token={token}&expires={expires}"
                 
-                # Verifica supporto FHD
-                if "window.canPlayFHD = true" in script_content:
+                # Verifica supporto FHD e aggiungi parametri standard
+                if "window.canPlayFHD = true" in script_content or "canPlayFHD" in script_content:
                     final_url += "&h=1"
+                
+                # Aggiungi sempre la lingua e asn se presente (opzionale)
+                final_url += "&lang=en"
+                
+                asn_match = re.search(r"['\"]asn['\"]\s*:\s*['\"]([^'\"]*)['\"]", script_content)
+                if asn_match and asn_match.group(1):
+                    final_url += f"&asn={asn_match.group(1)}"
                 
                 # Prepara headers finali
                 stream_headers = self.base_headers.copy()

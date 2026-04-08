@@ -1,7 +1,7 @@
 services:  
-  EasyProxy:
+  easyproxy:
     build: https://github.com/realbestia1/EasyProxy.git#main
-    container_name: EasyProxy
+    container_name: easyproxy
     restart: unless-stopped
     shm_size: "1gb"
     ports:
