@@ -2498,6 +2498,45 @@ class HLSProxy:
                 content_type="text/html",
             )
 
+    async def handle_docs(self, request):
+        """Serve Swagger UI per la documentazione API."""
+        try:
+            html_content = self._read_template("docs.html")
+            return web.Response(text=html_content, content_type="text/html")
+        except Exception as e:
+            logger.error(f"Unable to load 'docs.html': {e}")
+            return web.Response(
+                text="<h1>Error 500</h1><p>Unable to load API docs.</p>",
+                status=500,
+                content_type="text/html",
+            )
+
+    async def handle_redoc(self, request):
+        """Serve ReDoc per la documentazione API."""
+        try:
+            html_content = self._read_template("redoc.html")
+            return web.Response(text=html_content, content_type="text/html")
+        except Exception as e:
+            logger.error(f"Unable to load 'redoc.html': {e}")
+            return web.Response(
+                text="<h1>Error 500</h1><p>Unable to load ReDoc.</p>",
+                status=500,
+                content_type="text/html",
+            )
+
+    async def handle_url_generator(self, request):
+        """Serve la pagina web per generare URL proxy ed extractor."""
+        try:
+            html_content = self._read_template("url_generator.html")
+            return web.Response(text=html_content, content_type="text/html")
+        except Exception as e:
+            logger.error(f"Unable to load 'url_generator.html': {e}")
+            return web.Response(
+                text="<h1>Error 500</h1><p>Unable to load URL generator.</p>",
+                status=500,
+                content_type="text/html",
+            )
+
     async def handle_builder(self, request):
         """Gestisce l'interfaccia web del playlist builder."""
         try:
@@ -2560,7 +2599,6 @@ class HLSProxy:
             "modules": {
                 "playlist_builder": PlaylistBuilder is not None,
                 "vavoo_extractor": VavooExtractor is not None,
-                "dlhd_extractor": DLHDExtractor is not None,
                 "vixsrc_extractor": VixSrcExtractor is not None,
                 "sportsonline_extractor": SportsonlineExtractor is not None,
                 "mixdrop_extractor": MixdropExtractor is not None,
@@ -2596,6 +2634,202 @@ class HLSProxy:
             },
         }
         return web.json_response(info)
+
+    async def handle_openapi(self, request):
+        """Espone una specifica OpenAPI minimale per Swagger/ReDoc."""
+        server_url = f"{request.scheme}://{request.host}"
+        requires_password = bool(API_PASSWORD)
+
+        security_schemes = {
+            "ApiPasswordQuery": {
+                "type": "apiKey",
+                "in": "query",
+                "name": "api_password",
+                "description": "Primary auth method shown in docs. Header x-api-password is still accepted by the server.",
+            },
+        }
+        security = [{"ApiPasswordQuery": []}] if requires_password else []
+
+        spec = {
+            "openapi": "3.0.3",
+            "info": {
+                "title": "EasyProxy API",
+                "version": "2.5.0",
+                "description": (
+                    "Interactive documentation for EasyProxy. "
+                    "Includes HLS/MPD proxying, extractor endpoints, key and license helpers, "
+                    "playlist generation, and compatibility endpoints inspired by MediaFlow Proxy."
+                ),
+            },
+            "servers": [{"url": server_url}],
+            "components": {"securitySchemes": security_schemes},
+            "paths": {
+                "/api/info": {
+                    "get": {
+                        "summary": "Server information",
+                        "description": "Returns server status, loaded extractors, modules, and example endpoints.",
+                        "responses": {"200": {"description": "Server information JSON"}},
+                    }
+                },
+                "/proxy/manifest.m3u8": {
+                    "get": {
+                        "summary": "Legacy proxy manifest",
+                        "description": "Proxy a manifest using the legacy url parameter.",
+                        "parameters": [
+                            {"name": "url", "in": "query", "schema": {"type": "string"}, "required": True},
+                            {"name": "api_password", "in": "query", "schema": {"type": "string"}},
+                        ],
+                        "responses": {"200": {"description": "Proxied manifest or media response"}},
+                        **({"security": security} if requires_password else {}),
+                    }
+                },
+                "/proxy/hls/manifest.m3u8": {
+                    "get": {
+                        "summary": "Proxy HLS manifest",
+                        "description": "MediaFlow-compatible HLS proxy endpoint.",
+                        "parameters": [
+                            {"name": "d", "in": "query", "schema": {"type": "string"}, "required": True, "description": "Destination manifest URL"},
+                            {"name": "api_password", "in": "query", "schema": {"type": "string"}},
+                        ],
+                        "responses": {"200": {"description": "Proxied HLS manifest"}},
+                        **({"security": security} if requires_password else {}),
+                    }
+                },
+                "/proxy/mpd/manifest.m3u8": {
+                    "get": {
+                        "summary": "Proxy MPD as HLS",
+                        "description": "Converts or relays MPEG-DASH/MPD streams through EasyProxy.",
+                        "parameters": [
+                            {"name": "d", "in": "query", "schema": {"type": "string"}, "required": True, "description": "Destination MPD URL"},
+                            {"name": "key_id", "in": "query", "schema": {"type": "string"}},
+                            {"name": "key", "in": "query", "schema": {"type": "string"}},
+                            {"name": "api_password", "in": "query", "schema": {"type": "string"}},
+                        ],
+                        "responses": {"200": {"description": "Generated HLS manifest"}},
+                        **({"security": security} if requires_password else {}),
+                    }
+                },
+                "/proxy/stream": {
+                    "get": {
+                        "summary": "Generic stream proxy",
+                        "description": "Generic MediaFlow-style stream endpoint for direct proxying.",
+                        "parameters": [
+                            {"name": "d", "in": "query", "schema": {"type": "string"}, "required": True},
+                            {"name": "api_password", "in": "query", "schema": {"type": "string"}},
+                        ],
+                        "responses": {"200": {"description": "Streamed response"}},
+                        **({"security": security} if requires_password else {}),
+                    }
+                },
+                "/extractor": {
+                    "get": {
+                        "summary": "Generic extractor",
+                        "description": "Resolve supported hosters into playable URLs.",
+                        "parameters": [
+                            {"name": "host", "in": "query", "schema": {"type": "string"}},
+                            {"name": "url", "in": "query", "schema": {"type": "string"}},
+                            {"name": "api_password", "in": "query", "schema": {"type": "string"}},
+                        ],
+                        "responses": {"200": {"description": "Extractor response"}},
+                        **({"security": security} if requires_password else {}),
+                    }
+                },
+                "/extractor/video": {
+                    "get": {
+                        "summary": "Extractor compatibility endpoint",
+                        "description": "MediaFlow-compatible alias for video extractor requests.",
+                        "parameters": [
+                            {"name": "host", "in": "query", "schema": {"type": "string"}},
+                            {"name": "url", "in": "query", "schema": {"type": "string"}},
+                            {"name": "api_password", "in": "query", "schema": {"type": "string"}},
+                        ],
+                        "responses": {"200": {"description": "Extractor response"}},
+                        **({"security": security} if requires_password else {}),
+                    }
+                },
+                "/key": {
+                    "get": {
+                        "summary": "Fetch or transform decryption keys",
+                        "description": "Proxy AES-128 keys or derive license-related key material.",
+                        "parameters": [
+                            {"name": "key_url", "in": "query", "schema": {"type": "string"}},
+                            {"name": "key", "in": "query", "schema": {"type": "string"}},
+                            {"name": "key_id", "in": "query", "schema": {"type": "string"}},
+                            {"name": "api_password", "in": "query", "schema": {"type": "string"}},
+                        ],
+                        "responses": {"200": {"description": "Key response"}},
+                        **({"security": security} if requires_password else {}),
+                    }
+                },
+                "/license": {
+                    "get": {
+                        "summary": "License proxy",
+                        "description": "Proxy DRM license requests or handle ClearKey shortcuts.",
+                        "parameters": [
+                            {"name": "url", "in": "query", "schema": {"type": "string"}},
+                            {"name": "clearkey", "in": "query", "schema": {"type": "string"}},
+                            {"name": "api_password", "in": "query", "schema": {"type": "string"}},
+                        ],
+                        "responses": {"200": {"description": "License response"}},
+                        **({"security": security} if requires_password else {}),
+                    },
+                    "post": {
+                        "summary": "License proxy POST",
+                        "description": "POST DRM license payloads to the upstream license server.",
+                        "requestBody": {
+                            "required": False,
+                            "content": {"application/octet-stream": {"schema": {"type": "string", "format": "binary"}}},
+                        },
+                        "responses": {"200": {"description": "License response"}},
+                        **({"security": security} if requires_password else {}),
+                    },
+                },
+                "/generate_urls": {
+                    "post": {
+                        "summary": "Generate proxy URLs",
+                        "description": "Generate one or multiple compatibility URLs for clients.",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "mediaflow_proxy_url": {"type": "string"},
+                                            "api_password": {"type": "string"},
+                                            "urls": {"type": "array", "items": {"type": "object"}},
+                                        },
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {"200": {"description": "Generated URL list"}},
+                        **({"security": security} if requires_password else {}),
+                    }
+                },
+                "/playlist": {
+                    "get": {
+                        "summary": "Build a playlist",
+                        "description": "Combine multiple source URLs into a generated playlist.",
+                        "parameters": [
+                            {"name": "url", "in": "query", "schema": {"type": "string"}, "required": True},
+                            {"name": "api_password", "in": "query", "schema": {"type": "string"}},
+                        ],
+                        "responses": {"200": {"description": "Generated playlist"}},
+                        **({"security": security} if requires_password else {}),
+                    }
+                },
+                "/proxy/ip": {
+                    "get": {
+                        "summary": "Resolve public IP",
+                        "description": "Returns the public IP as seen through the configured proxy route.",
+                        "responses": {"200": {"description": "Public IP response"}},
+                    }
+                },
+            },
+        }
+
+        return web.json_response(spec)
 
     def _prefetch_next_segments(self, current_url, init_url, key, key_id, headers):
         """Identifica i prossimi segmenti e avvia il download in background."""

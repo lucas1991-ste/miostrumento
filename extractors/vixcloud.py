@@ -143,6 +143,14 @@ class VixCloudExtractor:
             )
         return cookies
 
+    @staticmethod
+    def _build_embed_playlist_url(url: str) -> str | None:
+        match = re.search(r"/embed/(?P<video_id>\d+)", url)
+        if not match:
+            return None
+        parsed = urlparse(url)
+        return f"{parsed.scheme}://{parsed.netloc}/playlist/{match.group('video_id')}?b=1"
+
     async def _fetch_html_via_browser(
         self, url: str, request_headers: dict | None = None
     ) -> tuple[str, str | None]:
@@ -276,32 +284,41 @@ class VixCloudExtractor:
                         f"VixCloud extraction failed: upstream returned 403 Forbidden ({exc})"
                     ) from exc
 
+        token_from_input = input_query.get("token", [None])[0]
+        expires_from_input = input_query.get("expires", [None])[0]
+        asn_from_input = input_query.get("asn", [None])[0]
+
         if components is None:
-            raise ExtractorError("VixCloud extraction failed: token/expires missing")
+            if token_from_input and expires_from_input:
+                playlist_url = self._build_embed_playlist_url(url)
+                if playlist_url:
+                    components = (
+                        playlist_url,
+                        token_from_input,
+                        expires_from_input,
+                        asn_from_input,
+                    )
+            if components is None:
+                raise ExtractorError("VixCloud extraction failed: token/expires missing")
 
         playlist_url, token, expires, asn = components
-        token = token or input_query.get("token", [None])[0]
-        expires = expires or input_query.get("expires", [None])[0]
-        asn = asn or input_query.get("asn", [None])[0]
+        token = token or token_from_input
+        expires = expires or expires_from_input
+        asn = asn or asn_from_input
 
-        if (not token or not expires) and "/embed/" in url:
-            direct_playlist_match = re.search(
-                r"/embed/(?P<video_id>\d+)",
-                url,
-            )
-            if direct_playlist_match:
-                playlist_url = urljoin(
-                    url,
-                    f"/playlist/{direct_playlist_match.group('video_id')}?b=1",
-                )
+        if "/embed/" in url and not playlist_url:
+            fallback_playlist_url = self._build_embed_playlist_url(url)
+            if fallback_playlist_url:
+                playlist_url = fallback_playlist_url
 
         if not token or not expires:
             raise ExtractorError(
                 "VixCloud extraction failed: missing token/expires in both page and input URL"
             )
 
+        separator = "&" if "?" in playlist_url else "?"
         final_url = (
-            f"{playlist_url}&token={token}"
+            f"{playlist_url}{separator}token={token}"
             f"&expires={expires}"
         )
         if asn:

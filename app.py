@@ -48,6 +48,9 @@ def create_app():
     
     # Registra le route
     app.router.add_get('/', proxy.handle_root)
+    app.router.add_get('/docs', proxy.handle_docs)
+    app.router.add_get('/redoc', proxy.handle_redoc)
+    app.router.add_get('/openapi.json', proxy.handle_openapi)
     app.router.add_get('/favicon.ico', proxy.handle_favicon) # ✅ Route Favicon
     
     # ✅ Route Static Files (con path assoluto e creazione automatica)
@@ -57,6 +60,8 @@ def create_app():
     app.router.add_static('/static', static_path)
     
     app.router.add_get('/builder', proxy.handle_builder)
+    app.router.add_get('/playlist/builder', proxy.handle_builder)
+    app.router.add_get('/url-generator', proxy.handle_url_generator)
     app.router.add_get('/info', proxy.handle_info_page)
     app.router.add_get('/api/info', proxy.handle_api_info)
     app.router.add_get('/key', proxy.handle_key_request)

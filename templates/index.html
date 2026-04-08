@@ -10,22 +10,17 @@
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
         :root {
-            /* Dark Theme Colors */
             --bg-primary: #0f0f23;
             --bg-secondary: #1a1a2e;
             --bg-tertiary: #16213e;
             --surface: rgba(255, 255, 255, 0.05);
             --surface-glass: rgba(255, 255, 255, 0.08);
             --surface-elevated: rgba(255, 255, 255, 0.12);
-
-            /* Modern Dark Gradients */
             --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             --secondary-gradient: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
             --accent-gradient: linear-gradient(135deg, #ff6b6b 0%, #4ecdc4 100%);
             --neon-gradient: linear-gradient(90deg, #00f5ff, #ff00ff, #ffff00, #ff00ff, #00f5ff);
             --dark-gradient: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-
-            /* Accent Colors */
             --accent-primary: #6366f1;
             --accent-secondary: #8b5cf6;
             --accent-success: #10b981;
@@ -35,14 +30,10 @@
             --neon-blue: #00f5ff;
             --neon-purple: #bf00ff;
             --neon-green: #39ff14;
-
-            /* Text Colors */
             --text-primary: #ffffff;
             --text-secondary: #a1a1aa;
             --text-muted: #71717a;
             --text-accent: #e4e4e7;
-
-            /* Border & Shadow */
             --border-primary: rgba(255, 255, 255, 0.1);
             --border-accent: rgba(255, 255, 255, 0.2);
             --glow-primary: 0 0 20px rgba(99, 102, 241, 0.3);
@@ -50,13 +41,9 @@
             --glow-neon: 0 0 40px rgba(0, 245, 255, 0.6);
             --shadow-dark: 0 25px 50px -12px rgba(0, 0, 0, 0.8);
             --shadow-glow: 0 0 60px rgba(99, 102, 241, 0.15);
-
-            /* Animation */
             --transition-fast: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
             --transition-normal: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             --transition-slow: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
-
-            /* Measurements */
             --border-radius: 16px;
             --border-radius-large: 24px;
             --spacing-xs: 0.25rem;
@@ -82,7 +69,6 @@
             position: relative;
         }
 
-        /* Animated Background */
         body::before {
             content: '';
             position: fixed;
@@ -99,19 +85,9 @@
         }
 
         @keyframes backgroundMove {
-
-            0%,
-            100% {
-                transform: translateY(0) rotate(0deg);
-            }
-
-            33% {
-                transform: translateY(-30px) rotate(1deg);
-            }
-
-            66% {
-                transform: translateY(30px) rotate(-1deg);
-            }
+            0%, 100% { transform: translateY(0) rotate(0deg); }
+            33% { transform: translateY(-30px) rotate(1deg); }
+            66% { transform: translateY(30px) rotate(-1deg); }
         }
 
         .container {
@@ -146,15 +122,8 @@
         }
 
         @keyframes gradientMove {
-
-            0%,
-            100% {
-                background-position: 0% 50%;
-            }
-
-            50% {
-                background-position: 100% 50%;
-            }
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
         }
 
         .hero-subtitle {
@@ -180,17 +149,8 @@
         }
 
         @keyframes pulse {
-
-            0%,
-            100% {
-                transform: scale(1);
-                box-shadow: var(--glow-primary);
-            }
-
-            50% {
-                transform: scale(1.02);
-                box-shadow: var(--glow-secondary);
-            }
+            0%, 100% { transform: scale(1); box-shadow: var(--glow-primary); }
+            50% { transform: scale(1.02); box-shadow: var(--glow-secondary); }
         }
 
         .status-dot {
@@ -203,13 +163,8 @@
         }
 
         @keyframes glow {
-            from {
-                box-shadow: 0 0 10px var(--neon-green);
-            }
-
-            to {
-                box-shadow: 0 0 25px var(--neon-green), 0 0 35px var(--neon-green);
-            }
+            from { box-shadow: 0 0 10px var(--neon-green); }
+            to { box-shadow: 0 0 25px var(--neon-green), 0 0 35px var(--neon-green); }
         }
 
         .features-grid {
@@ -230,6 +185,8 @@
             position: relative;
             overflow: hidden;
             cursor: pointer;
+            animation: fadeInUp 0.6s ease-out;
+            animation-fill-mode: both;
         }
 
         .feature-card::before {
@@ -352,72 +309,36 @@
         }
 
         @keyframes fadeInUp {
-            from {
-                opacity: 0;
-                transform: translateY(30px);
-            }
-
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
-        .feature-card {
-            animation: fadeInUp 0.6s ease-out;
-            animation-fill-mode: both;
-        }
+        .feature-card:nth-child(1) { animation-delay: 0.1s; }
+        .feature-card:nth-child(2) { animation-delay: 0.2s; }
+        .feature-card:nth-child(3) { animation-delay: 0.3s; }
+        .feature-card:nth-child(4) { animation-delay: 0.4s; }
+        .feature-card:nth-child(5) { animation-delay: 0.5s; }
+        .feature-card:nth-child(6) { animation-delay: 0.6s; }
 
-        .feature-card:nth-child(1) {
-            animation-delay: 0.1s;
-        }
-
-        .feature-card:nth-child(2) {
-            animation-delay: 0.2s;
-        }
-
-        .feature-card:nth-child(3) {
-            animation-delay: 0.3s;
-        }
-
-        .feature-card:nth-child(4) {
-            animation-delay: 0.4s;
-        }
-
-        /* Responsive */
         @media (max-width: 768px) {
-            .container {
-                padding: var(--spacing-md);
-            }
-
+            .container { padding: var(--spacing-md); }
             .cta-section {
                 flex-direction: column;
                 align-items: center;
             }
-
             .cta-button {
                 width: 100%;
                 max-width: 300px;
             }
         }
 
-        /* Scrollbar styling */
-        ::-webkit-scrollbar {
-            width: 8px;
-        }
-
-        ::-webkit-scrollbar-track {
-            background: var(--bg-secondary);
-        }
-
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: var(--bg-secondary); }
         ::-webkit-scrollbar-thumb {
             background: var(--surface-elevated);
             border-radius: 4px;
         }
-
-        ::-webkit-scrollbar-thumb:hover {
-            background: var(--border-accent);
-        }
+        ::-webkit-scrollbar-thumb:hover { background: var(--border-accent); }
     </style>
 </head>
 
@@ -437,29 +358,37 @@
             <div class="feature-card">
                 <div class="feature-icon">🔄</div>
                 <h3 class="feature-title">Universal Proxy</h3>
-                <p class="feature-description">Complete support for HLS (.m3u8), M3U playlists, and MPD (DASH) streaming
-                    with automatic optimization</p>
+                <p class="feature-description">Complete support for HLS (.m3u8), M3U playlists, MPD (DASH), generic stream proxying, manifest rewriting, and automatic optimization</p>
             </div>
 
             <div class="feature-card">
                 <div class="feature-icon">🎬</div>
                 <h3 class="feature-title">Advanced Extraction</h3>
-                <p class="feature-description">Automatic resolution of Vavoo links with restriction
-                    bypass and integrated API authentication</p>
+                <p class="feature-description">Automatic resolution for Vavoo, VixCloud, DaddyLiveHD, VOE, Mixdrop, StreamTape, FileMoon, StreamWish and many other supported hosts</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">🔐</div>
+                <h3 class="feature-title">DRM And Key Tools</h3>
+                <p class="feature-description">AES-128 key proxying, ClearKey support, DRM license proxying, decrypt endpoints, and MPD compatibility flows for protected streams</p>
             </div>
 
             <div class="feature-card">
                 <div class="feature-icon">📡</div>
                 <h3 class="feature-title">Playlist Builder</h3>
-                <p class="feature-description">Combine multiple playlists into a single M3U8 source with integrated
-                    proxy and universal compatibility for all IPTV players</p>
+                <p class="feature-description">Combine multiple playlists into a single M3U8 source with integrated proxy and universal compatibility for all IPTV players</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">🧰</div>
+                <h3 class="feature-title">Docs And URL Tools</h3>
+                <p class="feature-description">Interactive API docs, ReDoc, JSON info endpoints, URL generator, extractor shortcuts, and batch proxy URL generation for clients</p>
             </div>
 
             <div class="feature-card">
                 <div class="feature-icon">📹</div>
                 <h3 class="feature-title">DVR Recording</h3>
-                <p class="feature-description">Record live streams to local storage with TiVo-like functionality. Start,
-                    stop, and manage recordings with ease</p>
+                <p class="feature-description">Record live streams to local storage with TiVo-like functionality. Start, stop, and manage recordings with ease</p>
             </div>
         </div>
 
@@ -468,9 +397,21 @@
                 <span>🏗️</span>
                 <span>Playlist Builder</span>
             </a>
+            <a href="url-generator" class="cta-button cta-primary">
+                <span>🔧</span>
+                <span>URL Generator</span>
+            </a>
             <a href="recordings" class="cta-button cta-primary">
                 <span>📹</span>
                 <span>DVR Recordings</span>
+            </a>
+            <a href="docs" class="cta-button cta-secondary">
+                <span>📘</span>
+                <span>API Docs</span>
+            </a>
+            <a href="redoc" class="cta-button cta-secondary">
+                <span>📚</span>
+                <span>ReDoc</span>
             </a>
             <a href="info" class="cta-button cta-secondary">
                 <span>📋</span>
@@ -480,31 +421,26 @@
     </div>
 
     <script>
-        // Add interactive effects
         document.addEventListener('DOMContentLoaded', function () {
-            // Light parallax effect for cards
             const cards = document.querySelectorAll('.feature-card');
 
             document.addEventListener('mousemove', (e) => {
                 const mouseX = e.clientX / window.innerWidth;
                 const mouseY = e.clientY / window.innerHeight;
 
-                cards.forEach((card, index) => {
+                cards.forEach((card) => {
                     const xOffset = (mouseX - 0.5) * 10;
                     const yOffset = (mouseY - 0.5) * 10;
-
                     card.style.transform = `translate(${xOffset}px, ${yOffset}px) translateY(-8px)`;
                 });
             });
 
-            // Reset transform when mouse leaves
             document.addEventListener('mouseleave', () => {
                 cards.forEach(card => {
                     card.style.transform = '';
                 });
             });
 
-            // Click effect on cards
             cards.forEach(card => {
                 card.addEventListener('click', function () {
                     this.style.transform = 'scale(0.95)';
@@ -514,7 +450,6 @@
                 });
             });
 
-            // Title gradient animation on click
             const title = document.querySelector('.hero-title');
             title.addEventListener('click', () => {
                 title.style.animationDuration = '0.5s';

@@ -6,7 +6,7 @@
 
 > **A universal proxy server for HLS, M3U8, and IPTV streaming** 🎬  
 > Native support for Vavoo, DaddyliveHD, and many streaming services  
-> Compatible with Stremio addons when used as a MediaFlow Proxy  
+> Compatible with Stremio addons when used as a [MediaFlow Proxy](https://github.com/mhdzumair/mediaflow-proxy)  
 > Integrated web interface and zero configuration  
 
 ---
