@@ -57,5 +57,5 @@ LABEL org.opencontainers.image.source="https://github.com/realbestia1/EasyProxy"
 EXPOSE 7860
 
 # Comando per avviare l'app in produzione con Gunicorn
-# Usa sh -c per permettere l'espansione della variabile d'ambiente $PORT
-CMD sh -c "xvfb-run -a --server-args='-screen 0 1366x768x24' gunicorn --bind 0.0.0.0:${PORT:-7860} --workers 4 --worker-class aiohttp.worker.GunicornWebWorker --timeout 120 --graceful-timeout 120 app:app"
+# Usa sh -c per permettere l'espansione delle variabili e il fallback dinamico dei worker
+CMD ["sh", "-c", "WORKERS_COUNT=${WORKERS:-$(nproc 2>/dev/null || echo 1)}; xvfb-run -a --server-args='-screen 0 1366x768x24' gunicorn --bind 0.0.0.0:${PORT:-7860} --workers $WORKERS_COUNT --worker-class aiohttp.worker.GunicornWebWorker --timeout 120 --graceful-timeout 120 app:app"]

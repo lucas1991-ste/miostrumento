@@ -348,6 +348,30 @@ class HLSProxy:
         # This reuses connections for the same proxy to improve performance
         self.proxy_sessions = {}
 
+    @staticmethod
+    def _strip_fake_png_header_from_ts(content: bytes) -> bytes:
+        """
+        Some providers prepend a fake 8-byte PNG signature to TS segments.
+        Strip it only when bytes after the header still match TS sync markers.
+        """
+        png_sig = b"\x89PNG\r\n\x1a\n"
+        if len(content) <= 8 or not content.startswith(png_sig):
+            return content
+
+        ts_payload = content[8:]
+        # MPEG-TS sync byte is 0x47 at packet boundaries.
+        if not ts_payload or ts_payload[0] != 0x47:
+            return content
+        if len(ts_payload) > 188 and ts_payload[188] != 0x47:
+            return content
+
+        logger.info(
+            "Removed fake PNG header from TS segment (%d -> %d bytes)",
+            len(content),
+            len(ts_payload),
+        )
+        return ts_payload
+
 
     @staticmethod
     def _compute_key_headers(
@@ -1117,7 +1141,7 @@ class HLSProxy:
                 scheme = request.headers.get("X-Forwarded-Proto", request.scheme)
                 host = request.headers.get("X-Forwarded-Host", request.host)
                 proxy_base = f"{scheme}://{host}"
-                original_channel_url = request.query.get("url", "")
+                original_channel_url = request.query.get("url") or request.query.get("d", "")
                 api_password = request.query.get("api_password")
                 no_bypass = request.query.get("no_bypass") == "1"
                 rewritten_manifest = await ManifestRewriter.rewrite_manifest_urls(
@@ -1957,6 +1981,8 @@ class HLSProxy:
             # ✅ Use pooled session for better performance
             session, _ = await self._get_proxy_session(segment_url)
             async with session.get(segment_url, headers=headers) as resp:
+                content_bytes = await resp.read()
+                content_bytes = self._strip_fake_png_header_from_ts(content_bytes)
                 response_headers = {}
 
                 for header in [
@@ -1991,16 +2017,15 @@ class HLSProxy:
                     "Range, Content-Type",
                 )
 
-                response = web.StreamResponse(
-                    status=resp.status, headers=response_headers
+                set_response_header(
+                    response_headers, "Content-Length", str(len(content_bytes))
                 )
 
-                await response.prepare(request)
-
-                async for chunk in resp.content.iter_chunked(8192):
-                    await response.write(chunk)
-                await response.write_eof()
-                return response
+                return web.Response(
+                    body=content_bytes,
+                    status=resp.status,
+                    headers=response_headers,
+                )
 
         except Exception as e:
             logger.error(f"Error in segment proxy: {str(e)}")
@@ -2175,6 +2200,11 @@ class HLSProxy:
                             )
 
                 if manifest_content is None and request.path.startswith("/proxy/hls/segment."):
+                    segment_was_stripped = False
+                    if request.path.endswith(".ts") or stream_url.endswith(".ts"):
+                        original_len = len(content_bytes)
+                        content_bytes = self._strip_fake_png_header_from_ts(content_bytes)
+                        segment_was_stripped = len(content_bytes) != original_len
                     segment_content_type = "video/mp4"
                     if request.path.endswith(".ts"):
                         segment_content_type = "video/MP2T"
@@ -2189,6 +2219,10 @@ class HLSProxy:
                         response_headers["Content-Range"] = resp.headers["content-range"]
                     if "accept-ranges" in resp.headers:
                         response_headers["Accept-Ranges"] = resp.headers["accept-ranges"]
+                    if segment_was_stripped:
+                        response_headers["Content-Length"] = str(len(content_bytes))
+                        response_headers.pop("Content-Range", None)
+                        response_headers.pop("Accept-Ranges", None)
 
                     return web.Response(
                         body=content_bytes,
@@ -2204,7 +2238,7 @@ class HLSProxy:
                     scheme = request.headers.get("X-Forwarded-Proto", request.scheme)
                     host = request.headers.get("X-Forwarded-Host", request.host)
                     proxy_base = f"{scheme}://{host}"
-                    original_channel_url = request.query.get("url", "")
+                    original_channel_url = request.query.get("url") or request.query.get("d", "")
 
                     api_password = request.query.get("api_password")
                     no_bypass = request.query.get("no_bypass") == "1"
@@ -2352,6 +2386,12 @@ class HLSProxy:
 
                 # Streaming normale per altri tipi di contenuto (segmenti binari)
                 # Il body è già stato letto in content_bytes, usiamo quello.
+                segment_was_stripped = False
+                if request.path.endswith(".ts") or stream_url.endswith(".ts"):
+                    original_len = len(content_bytes)
+                    content_bytes = self._strip_fake_png_header_from_ts(content_bytes)
+                    segment_was_stripped = len(content_bytes) != original_len
+
                 response_headers = {}
 
                 for header in [
@@ -2372,6 +2412,14 @@ class HLSProxy:
                     "content-type", ""
                 ).lower():
                     set_response_header(response_headers, "Content-Type", "video/MP2T")
+                if segment_was_stripped:
+                    set_response_header(
+                        response_headers, "Content-Length", str(len(content_bytes))
+                    )
+                    response_headers.pop("content-range", None)
+                    response_headers.pop("Content-Range", None)
+                    response_headers.pop("accept-ranges", None)
+                    response_headers.pop("Accept-Ranges", None)
 
                 set_response_header(
                     response_headers, "Access-Control-Allow-Origin", "*"

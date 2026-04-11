@@ -248,6 +248,25 @@ class DLStreamsExtractor:
             logger.debug("DLStreams direct manifest fetch error: %s", exc)
         return None
 
+    async def _lookup_server_key(self, lookup_base: str, channel_key: str, referer_origin: str) -> str:
+        """Best-effort server key lookup used to build manifest URL candidates."""
+        session = await self._get_session()
+        lookup_url = f"{lookup_base.rstrip('/')}/server_lookup?channel_id={channel_key}"
+        headers = {
+            "Referer": f"{referer_origin.rstrip('/')}/",
+            "User-Agent": self.base_headers["User-Agent"],
+        }
+        try:
+            async with session.get(lookup_url, headers=headers) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    key = data.get("server_key", "wind")
+                    if isinstance(key, str) and key:
+                        return key
+        except Exception as exc:
+            logger.debug("DLStreams server lookup failed for %s: %s", channel_key, exc)
+        return "wind"
+
     async def _capture_browser_session_state(self, channel_id: str, player_url: str | None = None) -> str | None:
         channel_key = f"premium{channel_id}"
         if self._is_browser_cooldown_active(channel_key):
@@ -390,12 +409,20 @@ class DLStreamsExtractor:
             iframe_origin = self.entry_origin.rstrip("/")
             lookup_base = self.stream_origin.rstrip("/")
             
-            # Determine initial server_key (will refine during manifest fetch)
-            server_key = "wind" 
+            # Determine server_key early so we can try multiple direct manifest URLs
+            # before requiring a browser refresh.
+            server_key = await self._lookup_server_key(lookup_base, channel_key, iframe_origin)
 
-            # 1. FETCH ACTUAL MANIFEST (Bypassing the permanent cache)
-            # We construct the expected URL and try to fetch it directly first.
-            m3u8_url = f"{lookup_base}/proxy/{server_key}/{channel_key}/mono.css"
+            # 1. FETCH ACTUAL MANIFEST (Bypassing permanent cache)
+            candidate_urls = [
+                f"{lookup_base}/proxy/{server_key}/{channel_key}/mono.css",
+                f"{lookup_base}/proxy/wind/{channel_key}/mono.css",
+                f"{lookup_base}/proxy/top1/cdn/{channel_key}/mono.css",
+            ]
+            # preserve order and remove duplicates
+            seen = set()
+            candidate_urls = [u for u in candidate_urls if not (u in seen or seen.add(u))]
+            m3u8_url = candidate_urls[0]
             
             playback_headers = {
                 "Referer": f"{iframe_origin}/",
@@ -446,7 +473,12 @@ class DLStreamsExtractor:
 
             # 3. FETCH ACTUAL MANIFEST
             # Initial direct fetch attempt
-            captured_manifest = await self._fetch_manifest_directly(m3u8_url, playback_headers)
+            captured_manifest = None
+            for candidate in candidate_urls:
+                captured_manifest = await self._fetch_manifest_directly(candidate, playback_headers)
+                if captured_manifest:
+                    m3u8_url = candidate
+                    break
             
             if not captured_manifest:
                 # If direct fetch fails, we need to re-capture session state via browser (synchronous fallback)
@@ -458,6 +490,7 @@ class DLStreamsExtractor:
                     if captured_manifest:
                         # Recalculate base after re-capture
                         lookup_base = self.stream_origin.rstrip("/")
+                        server_key = await self._lookup_server_key(lookup_base, channel_key, iframe_origin)
                         m3u8_url = f"{lookup_base}/proxy/{server_key}/{channel_key}/mono.css"
                         break
             
@@ -467,25 +500,9 @@ class DLStreamsExtractor:
             # Update micro-cache
             self._manifest_cache[channel_key] = (captured_manifest, time.time())
 
-            # 2. SERVER LOOKUP: Refresh dynamic server_key
-            lookup_url = f"{lookup_base}/server_lookup?channel_id={channel_key}"
-            logger.info(f"Looking up server key for: {channel_key}")
-            
-            server_key = "wind"
-            lookup_headers = {
-                "Referer": f"{iframe_origin}/",
-                "User-Agent": self.base_headers["User-Agent"],
-            }
-            try:
-                async with session.get(lookup_url, headers=lookup_headers) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        server_key = data.get("server_key", "wind")
-                        logger.info(f"Found server_key: {server_key} via {iframe_origin}")
-                    else:
-                        logger.debug("DLStreams lookup failed for %s with HTTP %s", iframe_origin, resp.status)
-            except Exception as e:
-                logger.debug("DLStreams lookup error for %s: %s", iframe_origin, e)
+            # 2. SERVER LOOKUP: refresh once more after possible browser re-capture
+            server_key = await self._lookup_server_key(lookup_base, channel_key, iframe_origin)
+            logger.info(f"Found server_key: {server_key} via {iframe_origin}")
 
             # 2. Construct M3U8 URL
             m3u8_url = f"{lookup_base}/proxy/{server_key}/{channel_key}/mono.css"

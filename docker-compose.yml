@@ -9,6 +9,7 @@ services:
     environment:
       - API_PASSWORD=ep      #qui inserisci la tua password personalizzata
       - PORT=7860
+      #- WORKERS=2            # Se commentato, usa il numero di core della CPU (nproc)
       
       # Scegli come gestire gli stream MPD/DASH:
       # - ffmpeg: Transcoding via FFmpeg (richiede FFmpeg installato, alta CPU ma sync A/V migliore)

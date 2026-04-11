@@ -1,7 +1,7 @@
 import logging
 import random
 import re
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 from aiohttp import ClientSession, ClientTimeout, TCPConnector
 from aiohttp_socks import ProxyConnector
 
@@ -50,6 +50,27 @@ class TurboVidPlayExtractor:
         parsed = urlparse(url)
         return f"{parsed.scheme}://{parsed.netloc}"
 
+    @staticmethod
+    def _extract_playlist_url(text: str, base_url: str | None = None) -> str | None:
+        """Extract an HLS playlist URL from either a manifest or inline script response."""
+        patterns = [
+            r'https?://[^\'"\s]+\.m3u8(?:\?[^\'"\s]*)?',
+            r'//[^\'"\s]+\.m3u8(?:\?[^\'"\s]*)?',
+            r'/[^\'"\s]+\.m3u8(?:\?[^\'"\s]*)?',
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if not match:
+                continue
+
+            candidate = match.group(0)
+            if candidate.startswith("//"):
+                return f"https:{candidate}"
+            if base_url and candidate.startswith("/"):
+                return urljoin(base_url, candidate)
+            return candidate
+        return None
+
     async def extract(self, url: str, **kwargs) -> dict:
         """Extract TurboVidPlay URL."""
         session = await self._get_session()
@@ -76,13 +97,17 @@ class TurboVidPlayExtractor:
         # 3. Fetch the intermediate playlist
         async with session.get(media_url, headers={"Referer": url}) as data_resp:
             playlist = await data_resp.text()
+            playlist_url = str(data_resp.url)
 
         # 4. Extract real m3u8 URL
-        m2 = re.search(r'https?://[^\'"\\s]+\.m3u8', playlist)
-        if not m2:
+        real_m3u8 = self._extract_playlist_url(playlist, playlist_url)
+        if not real_m3u8:
+            if ".m3u8" in playlist_url:
+                real_m3u8 = playlist_url
+            elif ".m3u8" in media_url:
+                real_m3u8 = media_url
+        if not real_m3u8:
             raise ExtractorError("TurboViPlay: Unable to extract playlist URL")
-
-        real_m3u8 = m2.group(0)
 
         # 5. Final headers
         self.base_headers.update({"referer": url, "origin": origin})
