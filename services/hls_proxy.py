@@ -601,7 +601,8 @@ class HLSProxy:
                     key = "doodstream"
                     if key not in self.extractors:
                         self.extractors[key] = DoodStreamExtractor(
-                            request_headers, proxies=GLOBAL_PROXIES
+                            request_headers,
+                            proxies=GLOBAL_PROXIES,
                         )
                     return self.extractors[key]
                 elif host == "fastream":
@@ -824,7 +825,8 @@ class HLSProxy:
                 proxy_list = [proxy] if proxy else []
                 if key not in self.extractors:
                     self.extractors[key] = DoodStreamExtractor(
-                        request_headers, proxies=proxy_list
+                        request_headers,
+                        proxies=proxy_list,
                     )
                 return self.extractors[key]
             elif "fastream" in url:
