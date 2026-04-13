@@ -200,8 +200,8 @@ class ManifestRewriter:
         lines = manifest_content.split("\n")
         rewritten_lines = []
 
-        # Determina se e VixSrc (logica speciale per quality selection)
-        is_vixsrc_stream = False
+        # Determina se occorre filtrare e selezionare la massima qualita
+        filter_highest_quality = False
         logger.info(f"Manifest rewriter called with base_url: {base_url}")
 
         try:
@@ -214,16 +214,19 @@ class ManifestRewriter:
                 extractor = await get_extractor_func(original_request_url, {})
 
                 if hasattr(extractor, "is_vixsrc") and extractor.is_vixsrc:
-                    is_vixsrc_stream = True
-                    logger.info("Detected VixSrc stream.")
+                    filter_highest_quality = True
+                    logger.info("Detected VixSrc stream: enabling quality filter.")
+                elif hasattr(extractor, "is_city") and extractor.is_city:
+                    filter_highest_quality = True
+                    logger.info("Detected City stream: enabling quality filter.")
         except Exception as e:
             logger.error(f"Error in extractor detection: {e}")
 
         # no_bypass e mantenuto per compatibilita, ma il rewriter ora proxa sempre.
         _ = no_bypass
 
-        # Logica speciale SOLO per VixSrc (filtro qualita)
-        if is_vixsrc_stream:
+        # Logica speciale per il filtro qualita
+        if filter_highest_quality:
             streams = []
             for i, line in enumerate(lines):
                 if line.startswith("#EXT-X-STREAM-INF:"):
@@ -241,7 +244,7 @@ class ManifestRewriter:
             if streams:
                 highest_quality_stream = max(streams, key=lambda x: x["bandwidth"])
                 logger.info(
-                    f"VixSrc: Selected bandwidth {highest_quality_stream['bandwidth']}."
+                    f"Quality Filter: Selected bandwidth {highest_quality_stream['bandwidth']}."
                 )
                 header_params = "".join(
                     [
@@ -278,17 +281,23 @@ class ManifestRewriter:
                         line[:uri_start] + proxy_media_url + line[uri_end:]
                     )
 
-                rewritten_lines.append("#EXTM3U")
+                # Aggiungi i tag globali (es. #EXT-X-VERSION) ma filtra quelli che riscriveremo
                 for line in lines:
-                    if line.startswith("#EXT-X-MEDIA:") or line.startswith(
-                        "#EXT-X-STREAM-INF:"
-                    ) or (line and not line.startswith("#")):
+                    line = line.strip()
+                    if not line or line == "#EXTM3U":
                         continue
+                    if line.startswith("#EXT-X-MEDIA:") or line.startswith("#EXT-X-STREAM-INF:") or not line.startswith("#"):
+                        continue
+                    rewritten_lines.append(line)
 
+                # Aggiunge i media proxati (sottotitoli, audio) e lo stream scelto
                 rewritten_lines.extend(proxied_media_lines)
                 rewritten_lines.append(highest_quality_stream["inf"])
                 rewritten_lines.append(proxied_stream_url)
-                return "\n".join(rewritten_lines)
+                
+                # Assicura che inizi con #EXTM3U
+                final_content = "#EXTM3U\n" + "\n".join(rewritten_lines)
+                return final_content
 
         # --- Logica Standard ---
         header_params = "".join(
