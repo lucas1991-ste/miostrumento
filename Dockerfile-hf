@@ -11,7 +11,7 @@ ENV BYPARR_URL=http://localhost:8192
 ENV BYPARR_PORT=8192
 ENV PORT=7860
 
-# 2. System Dependencies
+# 2. System Dependencies (Added dependencies for FlareSolverr/Chrome)
 RUN apt-get update && apt-get install -y \
     curl \
     git \
@@ -38,26 +38,27 @@ RUN apt-get update && apt-get install -y \
     fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
-# 3. Clone EasyProxy
-RUN git clone https://github.com/realbestia1/EasyProxy . 
-
-# 4. FlareSolverr v3 Setup (Python)
+# 3. FlareSolverr v3 Setup (Python-based)
+# No longer requires Node.js/npm run build
 RUN git clone https://github.com/FlareSolverr/FlareSolverr.git /app/flaresolverr \
     && cd /app/flaresolverr \
     && pip install --no-cache-dir -r requirements.txt
 
-# 5. Byparr Setup (Go Binary)
+# 4. Byparr Setup (Go Binary)
 RUN mkdir -p /app/byparr \
     && curl -L https://github.com/ThePhaseless/Byparr/releases/latest/download/byparr-linux-amd64 -o /app/byparr/byparr \
     && chmod +x /app/byparr/byparr
 
-# 6. EasyProxy Dependencies & Playwright
+# 5. Copy EasyProxy Code & Install Dependencies
+# Use COPY instead of git clone to include local changes during build
+COPY . .
 RUN pip install --no-cache-dir -r requirements.txt
 RUN python -m playwright install chromium
 
-# 7. Final Polish
+# 6. Final Polish
 RUN chmod +x entrypoint.sh
 
-# 8. Execution
+# 7. Execution
 EXPOSE 7860
 ENTRYPOINT ["/bin/bash", "/app/entrypoint.sh"]
+
