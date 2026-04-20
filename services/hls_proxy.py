@@ -45,7 +45,6 @@ from config import (
     APP_VERSION,
     ENABLE_WARP,
     ENABLE_REMUXING,
-    BYPASS_PROXY_EXTRACTORS,
 )
 from extractors.generic import GenericHLSExtractor, ExtractorError
 from services.manifest_rewriter import ManifestRewriter
