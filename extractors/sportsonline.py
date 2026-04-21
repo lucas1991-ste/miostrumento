@@ -167,7 +167,7 @@ class SportsonlineExtractor:
                 proxy = self._get_random_proxy()
                 
             if proxy:
-                logger.info(f"Using proxy {proxy} for Sportsonline session.")
+                logger.debug(f"Using proxy {proxy} for Sportsonline session.")
                 connector = get_connector_for_proxy(proxy)
             else:
                 connector = TCPConnector(limit=0, limit_per_host=0)
@@ -188,7 +188,7 @@ class SportsonlineExtractor:
 
         for attempt in range(retries):
             try:
-                logger.info(f"Attempt {attempt + 1}/{retries} for URL: {url}")
+                logger.debug(f"Attempt {attempt + 1}/{retries} for URL: {url}")
                 
                 # Usiamo smart_request che gestisce già il bypass Cloudflare
                 html = await smart_request("request.get", url, headers=final_headers, proxies=self.proxies)
@@ -294,7 +294,7 @@ class SportsonlineExtractor:
             user_agent = self._get_request_header("User-Agent", self.base_headers["User-Agent"])
 
             # Step 1: Fetch main page
-            logger.info(f"Fetching main page: {url}")
+            logger.debug(f"Fetching main page: {url}")
             main_headers = self._build_page_headers()
             if source_referer:
                 main_headers["Referer"] = source_referer
@@ -316,7 +316,7 @@ class SportsonlineExtractor:
 
             if iframe_match:
                 iframe_url = self._normalize_stream_url(iframe_match.group(1), main_url)
-                logger.info(f"Found iframe URL: {iframe_url}")
+                logger.debug(f"Found iframe URL: {iframe_url}")
 
                 candidates = [iframe_url]
                 parsed_iframe = urlparse(iframe_url)
@@ -353,7 +353,7 @@ class SportsonlineExtractor:
             # Step 3: Detect packed blocks
             packed_blocks = self._detect_packed_blocks(iframe_html)
 
-            logger.info(f"Found {len(packed_blocks)} packed blocks")
+            logger.debug(f"Found {len(packed_blocks)} packed blocks")
 
             if not packed_blocks:
                 logger.warning("No packed blocks found, trying direct m3u8 search")
@@ -361,7 +361,7 @@ class SportsonlineExtractor:
                 direct_match = self._extract_m3u8_candidate(iframe_html)
                 if direct_match:
                     m3u8_url = self._normalize_stream_url(direct_match, iframe_url)
-                    logger.info(f"Found direct m3u8 URL: {m3u8_url}")
+                    logger.debug(f"Found direct m3u8 URL: {m3u8_url}")
 
                     return {
                         "destination_url": m3u8_url,
@@ -376,12 +376,12 @@ class SportsonlineExtractor:
             m3u8_url = None
             unpacked_code = None
 
-            logger.info(f"Chosen packed block index: {chosen_idx}")
+            logger.debug(f"Chosen packed block index: {chosen_idx}")
 
             # Try to unpack chosen block
             try:
                 unpacked_code = extract_unpack(packed_blocks[chosen_idx])
-                logger.info(f"Successfully unpacked block {chosen_idx}")
+                logger.debug(f"Successfully unpacked block {chosen_idx}")
             except Exception as e:
                 logger.warning(f"Failed to unpack block {chosen_idx}: {e}")
 
@@ -391,7 +391,7 @@ class SportsonlineExtractor:
 
             # If not found, try all other blocks
             if not m3u8_url:
-                logger.info("m3u8 not found in chosen block, trying all blocks")
+                logger.debug("m3u8 not found in chosen block, trying all blocks")
                 for i, block in enumerate(packed_blocks):
                     if i == chosen_idx:
                         continue
@@ -399,7 +399,7 @@ class SportsonlineExtractor:
                         unpacked_code = extract_unpack(block)
                         m3u8_url = self._extract_m3u8_candidate(unpacked_code)
                         if m3u8_url:
-                            logger.info(f"Found m3u8 in block {i}")
+                            logger.debug(f"Found m3u8 in block {i}")
                             break
                     except Exception as e:
                         logger.debug(f"Failed to process block {i}: {e}")

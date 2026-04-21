@@ -134,7 +134,7 @@ class FFmpegManager:
                     cmd.extend(["-cenc_decryption_key", key])
                 
                 if keys_to_use:
-                    logger.info(f"Added {len(keys_to_use)} decryption key(s) to FFmpeg command")
+                    logger.debug(f"Added {len(keys_to_use)} decryption key(s) to FFmpeg command")
             except Exception as e:
                 logger.error(f"Error parsing clearkey: {e}")
 
@@ -166,8 +166,9 @@ class FFmpegManager:
             playlist_path
         ])
         
-        logger.info(f"Starting FFmpeg for {stream_id} with key: {clearkey}")
-        logger.info(f"Command: {cmd}")
+        logger.info(f"Starting FFmpeg for {stream_id}")
+        logger.debug(f"FFmpeg ClearKey for {stream_id}: {clearkey}")
+        logger.debug(f"FFmpeg command for {stream_id}: {cmd}")
         
         log_file = open(os.path.join(stream_dir, "ffmpeg.log"), "w")
         log_file.write(f"Command: {cmd}\n\n")

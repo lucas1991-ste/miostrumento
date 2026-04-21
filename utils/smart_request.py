@@ -69,7 +69,7 @@ async def smart_request(cmd: str, url: str, headers: Optional[Dict] = None, post
     # 2. Tentativo con curl_cffi (Browser Impersonation)
     if HAS_CURL_CFFI:
         try:
-            logger.info(f"SmartRequest (curl_cffi): Impersonazione browser per {url}")
+            logger.debug(f"SmartRequest (curl_cffi): Impersonazione browser per {url}")
             async with CurlAsyncSession(impersonate="chrome124") as s:
                 curl_proxies = {"http": proxy, "https": proxy} if proxy else None
                 
@@ -94,7 +94,7 @@ async def smart_request(cmd: str, url: str, headers: Optional[Dict] = None, post
         logger.error("SmartRequest: FlareSolverr non configurato e tentativi precedenti falliti.")
         return {"html": "", "cookies": {}}
 
-    logger.info(f"SmartRequest: Uso FlareSolverr per {url}")
+    logger.debug(f"SmartRequest: Uso FlareSolverr per {url}")
     endpoint = f"{FLARESOLVERR_URL.rstrip('/')}/v1"
     
     # ✅ FIX: Estrai i cookie dagli header per passarli a FlareSolverr

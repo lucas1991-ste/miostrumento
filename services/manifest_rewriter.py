@@ -116,7 +116,7 @@ class ManifestRewriter:
 
                     # Inietta ContentProtection
                     adaptation_sets = root.findall(".//mpd:AdaptationSet", ns)
-                    logger.info(
+                    logger.debug(
                         f"Found {len(adaptation_sets)} AdaptationSet in manifest."
                     )
 
@@ -126,7 +126,7 @@ class ManifestRewriter:
                             scheme = cp.get("schemeIdUri", "").lower()
                             if "e2719d58-a985-b3c9-781a-007147f192ec" not in scheme:
                                 adaptation_set.remove(cp)
-                                logger.info(
+                                logger.debug(
                                     f"Removed conflicting ContentProtection: {scheme}"
                                 )
 
@@ -142,7 +142,7 @@ class ManifestRewriter:
 
                         if not existing_cp:
                             adaptation_set.insert(0, cp_element)
-                            logger.info(
+                            logger.debug(
                                 "Injected static ClearKey ContentProtection in AdaptationSet"
                             )
 
@@ -161,7 +161,7 @@ class ManifestRewriter:
                             f"{proxy_base}/license?url={encoded_license_url}{header_params}"
                         )
                         child.text = proxy_license_url
-                        logger.info(
+                        logger.debug(
                             f"Redirected License URL: {original_license_url} -> {proxy_license_url}"
                         )
 
@@ -216,7 +216,7 @@ class ManifestRewriter:
 
                 if hasattr(extractor, "is_vixsrc") and extractor.is_vixsrc:
                     is_vixsrc_stream = True
-                    logger.info("Detected VixSrc stream.")
+                    logger.debug("Detected VixSrc stream.")
         except Exception as e:
             logger.error(f"Error in extractor detection: {e}")
 
@@ -241,7 +241,7 @@ class ManifestRewriter:
 
             if streams:
                 highest_quality_stream = max(streams, key=lambda x: x["bandwidth"])
-                logger.info(
+                logger.debug(
                     f"VixSrc: Selected bandwidth {highest_quality_stream['bandwidth']}."
                 )
                 if hls_sid:

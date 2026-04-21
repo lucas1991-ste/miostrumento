@@ -143,7 +143,7 @@ class CinemaCityExtractor:
                 selected_ep = ep_data.get('file')
             
             if selected_ep:
-                logger.info(f"CinemaCity: Selected S{season}E{episode} -> {selected_ep[:50]}...")
+                logger.debug(f"CinemaCity: Selected S{season}E{episode} -> {selected_ep[:50]}...")
             else:
                 logger.warning(f"CinemaCity: Failed to find S{season}E{episode} in file_data")
             

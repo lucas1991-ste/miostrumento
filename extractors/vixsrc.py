@@ -120,7 +120,7 @@ class VixSrcExtractor:
                 proxy = self._get_random_proxy()
                 
             if proxy:
-                logger.info("Using proxy %s for VixSrc session.", proxy)
+                logger.debug("Using proxy %s for VixSrc session.", proxy)
                 connector = get_connector_for_proxy(proxy)
             else:
                 connector = TCPConnector(
@@ -147,7 +147,7 @@ class VixSrcExtractor:
 
         for attempt in range(retries):
             try:
-                logger.info("Attempt %s/%s for URL: %s", attempt + 1, retries, url)
+                logger.debug("Attempt %s/%s for URL: %s", attempt + 1, retries, url)
                 
                 # Usiamo smart_request che gestisce già il bypass Cloudflare
                 result = await smart_request("request.get", url, headers=final_headers, proxies=self.proxies)
@@ -180,7 +180,7 @@ class VixSrcExtractor:
                                 status=self.status,
                             )
 
-                logger.info("Request successful for %s (via SmartRequest)", url)
+                logger.debug("Request successful for %s (via SmartRequest)", url)
                 return MockResponse(html, 200, url)
 
             except Exception as e:
@@ -212,7 +212,7 @@ class VixSrcExtractor:
 
                 if attempt < retries - 1:
                     delay = initial_delay * (2**attempt)
-                    logger.info("Waiting %s seconds before next attempt...", delay)
+                    logger.debug("Waiting %s seconds before next attempt...", delay)
                     await asyncio.sleep(delay)
                 else:
                     raise ExtractorError(f"All {retries} attempts failed for {url}: {str(e)}")
@@ -414,7 +414,7 @@ class VixSrcExtractor:
             incoming_headers = kwargs.get("request_headers") or {}
 
             if "/playlist/" in parsed_url.path:
-                logger.info("URL is already a VixSrc manifest, no extraction required.")
+                logger.debug("URL is already a VixSrc manifest, no extraction required.")
                 base_site = self._normalize_base_site(url)
                 return {
                     "destination_url": url,

@@ -95,7 +95,7 @@ class DeltabitExtractor:
         
         session_id = None
         try:
-            logger.info(f"Deltabit: Starting unified FlareSolverr bypass for {url}")
+            logger.debug(f"Deltabit: Starting unified FlareSolverr bypass for {url}")
             
             # Start session for better performance (persistence of cookies/browser state)
             sess_res = await self._request_flaresolverr("sessions.create")
@@ -141,7 +141,7 @@ class DeltabitExtractor:
             # Use a slightly shorter wait time if we are in a session (server might be more lenient)
             # but usually these hosts are strict. Reduction to 3.5s for a slight win.
             wait_time = 3.5
-            logger.info(f"Deltabit: Waiting {wait_time}s for server validation...")
+            logger.debug(f"Deltabit: Waiting {wait_time}s for server validation...")
             await asyncio.sleep(wait_time)
             
             # Submitting validation form via SAME FlareSolverr session
@@ -173,7 +173,7 @@ class DeltabitExtractor:
 
     async def _solve_safego(self, url: str) -> str:
         """Solves safego.cc captcha and returns the destination URL using FS sessions."""
-        logger.info(f"Deltabit: Solving safego.cc wrapper via FlareSolverr session: {url}")
+        logger.debug(f"Deltabit: Solving safego.cc wrapper via FlareSolverr session: {url}")
         
         session_id = None
         try:
@@ -199,7 +199,7 @@ class DeltabitExtractor:
                 
                 ocr = ddddocr.DdddOcr(show_ad=False)
                 res_captcha = ocr.classification(img_data)
-                logger.info(f"Deltabit: Solved safego.cc captcha: {res_captcha}")
+                logger.debug(f"Deltabit: Solved safego.cc captcha: {res_captcha}")
                 
                 post_data = urlencode({"captch5": res_captcha, "submit": "Continue"})
                 
@@ -227,14 +227,14 @@ class DeltabitExtractor:
                     new_url = proceed_link["href"]
                     if new_url.startswith("/"):
                         new_url = urljoin(current_url, new_url)
-                    logger.info(f"Deltabit: Resolved safego.cc -> {new_url}")
+                    logger.debug(f"Deltabit: Resolved safego.cc -> {new_url}")
                     return new_url
                 
                 meta_refresh = soup.find("meta", attrs={"http-equiv": re.compile(r'refresh', re.I)})
                 if meta_refresh and "url=" in meta_refresh.get("content", "").lower():
                     refresh_url = re.search(r'url=(.*)', meta_refresh["content"], re.I).group(1).strip()
                     if refresh_url:
-                        logger.info(f"Deltabit: Found meta-refresh redirect: {refresh_url}")
+                        logger.debug(f"Deltabit: Found meta-refresh redirect: {refresh_url}")
                         return urljoin(current_url, refresh_url)
 
                 if attempt < 3:

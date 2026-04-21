@@ -62,14 +62,14 @@ class FreeshotExtractor:
             embed_match = re.search(r'embed/([^/.]+)\.php', url)
             if embed_match:
                 channel_code = embed_match.group(1)
-                logger.info(f"FreeshotExtractor: Estratto codice {channel_code} da URL embed")
+                logger.debug(f"FreeshotExtractor: Estratto codice {channel_code} da URL embed")
             else:
                 # Altrimenti scarica la pagina principale per trovare l'iframe
                 # Usiamo FlareSolverr se disponibile, altrimenti fallback su aiohttp
                 content = ""
                 if self.flaresolverr_url:
                     try:
-                        logger.info(f"FreeshotExtractor: Uso FlareSolverr per estrarre codice da {url}")
+                        logger.debug(f"FreeshotExtractor: Uso FlareSolverr per estrarre codice da {url}")
                         content = await smart_request("request.get", url, headers=self.base_headers, proxies=self.proxies)
                     except Exception as e:
                         logger.warning(f"FreeshotExtractor: FlareSolverr fallito per freeshot.live: {e}")
@@ -88,13 +88,13 @@ class FreeshotExtractor:
                     match_pop = re.search(r'stream=([^&"\'\s]+)', content)
                     if match_pop:
                         channel_code = match_pop.group(1)
-                        logger.info(f"FreeshotExtractor: Trovato codice {channel_code} (popcdn stream) in pagina freeshot.live")
+                        logger.debug(f"FreeshotExtractor: Trovato codice {channel_code} (popcdn stream) in pagina freeshot.live")
                     else:
                         # 2. Cerca iframe embed: //freeshot.live/embed/ZonaDAZN.php
                         match_emb = re.search(r'embed/([^/.]+)\.php', content)
                         if match_emb:
                             channel_code = match_emb.group(1)
-                            logger.info(f"FreeshotExtractor: Trovato codice {channel_code} (embed link) in pagina freeshot.live")
+                            logger.debug(f"FreeshotExtractor: Trovato codice {channel_code} (embed link) in pagina freeshot.live")
 
         # 2. Estrai il codice dai vari formati popcdn
         if "go.php?stream=" in channel_code:
@@ -130,7 +130,7 @@ class FreeshotExtractor:
         # Nuovo URL formato /player/
         target_url = f"https://popcdn.day/player/{urllib.parse.quote(channel_code)}"
 
-        logger.info(f"FreeshotExtractor: Risoluzione {target_url} (channel: {channel_code})")
+        logger.debug(f"FreeshotExtractor: Risoluzione {target_url} (channel: {channel_code})")
         
         # 3. Risoluzione finale tramite popcdn.day (diretto)
         body = ""

@@ -22,6 +22,8 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(name)s - %(message)s'
 )
 
+logger = logging.getLogger(__name__)
+
 # --- Logica di Avvio ---
 def create_app():
     """Crea e configura l'applicazione aiohttp."""
@@ -212,17 +214,17 @@ def main():
         # Silenzia il logger di asyncio per evitare spam di ConnectionResetError
         logging.getLogger('asyncio').setLevel(logging.CRITICAL)
 
-    print("🚀 Starting HLS Proxy Server...")
-    print(f"📡 Server available at: http://localhost:{PORT}")
-    print(f"📡 Or: http://server-ip:{PORT}")
-    print("🔗 Endpoints:")
-    print("   • / - Main page")
-    print("   • /builder - Web interface for playlist builder")
-    print("   • /info - Server information page")
-    print("   • /recordings - DVR/Recording interface")
-    print("   • /proxy/manifest.m3u8?url=<URL> - Main stream proxy")
-    print("   • /playlist?url=<definitions> - Playlist generator")
-    print("=" * 50)
+    logger.info("🚀 Starting HLS Proxy Server...")
+    logger.info("📡 Server available at: http://localhost:%s", PORT)
+    logger.info("📡 Or: http://server-ip:%s", PORT)
+    logger.debug("🔗 Endpoints:")
+    logger.debug("   • / - Main page")
+    logger.debug("   • /builder - Web interface for playlist builder")
+    logger.debug("   • /info - Server information page")
+    logger.debug("   • /recordings - DVR/Recording interface")
+    logger.debug("   • /proxy/manifest.m3u8?url=<URL> - Main stream proxy")
+    logger.debug("   • /playlist?url=<definitions> - Playlist generator")
+    logger.debug("%s", "=" * 50)
     
     web.run_app(
         app, # Usa l'istanza aiohttp originale per il runner integrato

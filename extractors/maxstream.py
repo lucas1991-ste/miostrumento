@@ -111,7 +111,7 @@ class MaxstreamExtractor:
                         data = await resp.json()
                         ips = [ans['data'] for ans in data.get('Answer', []) if ans.get('type') == 1]
                         if ips:
-                            logger.info(f"DoH resolved {domain} to {ips}")
+                            logger.debug(f"DoH resolved {domain} to {ips}")
                             return ips
         except Exception as e:
             logger.debug(f"DoH resolution failed for {domain}: {e}")
@@ -154,7 +154,7 @@ class MaxstreamExtractor:
                     await self.session.close()
                     self.session = None
                 self.resolver.mapping[domain] = use_ip
-                logger.info(f"DoH bypass: forcing {domain} -> {use_ip}")
+                logger.debug(f"DoH bypass: forcing {domain} -> {use_ip}")
             else:
                 self.resolver.mapping.pop(domain, None)
 
@@ -217,7 +217,7 @@ class MaxstreamExtractor:
             parsed = urlparse(original_url)
             captcha_url = f"{parsed.scheme}://{parsed.netloc}{captcha_url}"
             
-        logger.info(f"Downloading captcha from: {captcha_url}")
+        logger.debug(f"Downloading captcha from: {captcha_url}")
         img_data = await self._smart_request(captcha_url, is_binary=True)
         
         if not img_data:
@@ -229,7 +229,7 @@ class MaxstreamExtractor:
             
         # Solve
         res = self._ocr_engine.classification(img_data)
-        logger.info(f"Captcha solved: {res}")
+        logger.debug(f"Captcha solved: {res}")
         
         # Submit form
         form_action = form.get("action", "")
@@ -253,7 +253,7 @@ class MaxstreamExtractor:
             if hidden.get("name"):
                 post_data[hidden["name"]] = hidden.get("value", "")
         
-        logger.info(f"Submitting captcha to: {form_action}")
+        logger.debug(f"Submitting captcha to: {form_action}")
         headers = {**self.base_headers, "referer": original_url}
         solved_text = await self._smart_request(form_action, method="POST", data=post_data, headers=headers)
         
@@ -321,7 +321,7 @@ class MaxstreamExtractor:
             return res
             
         # 2. If no link, try puzzle/captcha solver
-        logger.info("Direct link not found, checking for captcha...")
+        logger.debug("Direct link not found, checking for captcha...")
         res = await self._solve_uprot_captcha(text, link)
         if res:
             return res
@@ -336,7 +336,7 @@ class MaxstreamExtractor:
     async def extract(self, url: str, **kwargs) -> dict:
         """Extract Maxstream URL."""
         maxstream_url = await self.get_uprot(url)
-        logger.info(f"Target URL: {maxstream_url}")
+        logger.debug(f"Target URL: {maxstream_url}")
         
         # Use strict headers to avoid Error 131
         headers = {

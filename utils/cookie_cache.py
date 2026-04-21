@@ -25,7 +25,7 @@ class CookieCache:
                 if entry.get("expiry", 0) > time.time():
                     return entry
                 else:
-                    logger.info(f"Cookie cache ({self.name}) expired for domain: {domain}")
+                    logger.debug(f"Cookie cache ({self.name}) expired for domain: {domain}")
         except Exception as e:
             logger.error(f"Error reading cookie cache {self.filename}: {e}")
         return None
@@ -51,6 +51,6 @@ class CookieCache:
         try:
             with open(self.filename, "w") as f:
                 json.dump(cache, f)
-            logger.info(f"✅ Updated cookie cache {self.filename} for domain: {domain}")
+            logger.debug(f"Updated cookie cache {self.filename} for domain: {domain}")
         except Exception as e:
             logger.error(f"Error writing cookie cache {self.filename}: {e}")

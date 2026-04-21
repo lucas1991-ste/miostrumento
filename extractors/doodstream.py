@@ -50,7 +50,7 @@ class DoodStreamExtractor:
         domain = parsed.netloc
         cached = self.cache.get(domain)
         if cached:
-            logger.info(f"DoodStream: Using cached cookies for {domain}")
+            logger.debug(f"DoodStream: Using cached cookies for {domain}")
             try:
                 return await self._extract_via_curl_cffi(url, video_id, cookies=cached["cookies"], ua=cached["userAgent"])
             except Exception as e:
@@ -165,7 +165,7 @@ class DoodStreamExtractor:
 
         base_stream = None
         if settings.byparr_url:
-            logger.info(f"DoodStream: Fetching pass_md5 via Byparr")
+            logger.debug(f"DoodStream: Fetching pass_md5 via Byparr")
             try:
                 # Use Byparr's specialized /proxy for text/body extraction
                 async with aiohttp.ClientSession() as session:

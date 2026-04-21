@@ -304,9 +304,9 @@ except ImportError:
 
 try:
     from extractors.cinemacity import CinemaCityExtractor
-    print("✅ CinemaCityExtractor loaded successfully")
+    logger.info("✅ CinemaCityExtractor module loaded.")
 except Exception as e:
-    print(f"❌ CinemaCityExtractor FAILED to load: {e}")
+    logger.warning("⚠️ CinemaCityExtractor module not found or failed to load: %s", e)
     CinemaCityExtractor = None
 
 try:
@@ -1241,7 +1241,7 @@ class HLSProxy:
             url_id = request.query.get("hls_url_id")
             if url_id and url_id in self.hls_url_map:
                 target_url = self.hls_url_map[url_id]
-                logger.info(f"🔗 Resolved short URL ID: {url_id}")
+                logger.debug(f"🔗 Resolved short URL ID: {url_id}")
 
             force_refresh = request.query.get("force", "false").lower() == "true"
             redirect_stream = (
@@ -1262,7 +1262,7 @@ class HLSProxy:
             # 0. Gestione hls_sid (Header Session ID) per ridurre bloat del manifest
             hls_sid = request.query.get("hls_sid")
             if hls_sid and hls_sid in self.hls_header_sessions:
-                logger.info(f"📁 Using HLS header session: {hls_sid}")
+                logger.debug(f"📁 Using HLS header session: {hls_sid}")
                 combined_headers.update(self.hls_header_sessions[hls_sid])
 
             # 1. Header passati come h_X=Y
@@ -1374,7 +1374,7 @@ class HLSProxy:
                 if not current_hls_sid and stream_headers:
                     current_hls_sid = f"sid_{int(time.time())}_{random.getrandbits(16)}"
                     self.hls_header_sessions[current_hls_sid] = stream_headers
-                    logger.info(f"🆕 Created HLS header session: {current_hls_sid}")
+                    logger.debug(f"🆕 Created HLS header session: {current_hls_sid}")
 
                 rewritten_manifest = await ManifestRewriter.rewrite_manifest_urls(
                     manifest_content=captured_manifest,
@@ -1734,7 +1734,7 @@ class HLSProxy:
         Supporta redirect_stream per ridirezionare direttamente al proxy.
         """
         # Log request details for debugging
-        logger.info(f"📥 Extractor Request: {request.url}")
+        logger.debug(f"📥 Extractor Request: {request.url}")
 
         if not check_password(request):
             logger.warning("⛔ Unauthorized extractor request")
@@ -1817,7 +1817,7 @@ class HLSProxy:
                     "https://"
                 ):
                     url = decoded_str
-                    logger.info(f"🔓 Base64 decoded URL: {url}")
+                    logger.debug(f"🔓 Base64 decoded URL: {url}")
             except Exception:
                 # Non è Base64 o non è un URL valido, proseguiamo con l'originale
                 pass
@@ -1872,7 +1872,7 @@ class HLSProxy:
             if endpoint == "/proxy/hls/manifest.m3u8" and stream_headers:
                 hls_sid = f"sid_{int(time.time())}_{random.getrandbits(16)}"
                 self.hls_header_sessions[hls_sid] = stream_headers
-                logger.info(f"🆕 Created HLS header session in extractor: {hls_sid}")
+                logger.debug(f"🆕 Created HLS header session in extractor: {hls_sid}")
                 header_params = f"&hls_sid={hls_sid}"
             else:
                 header_params = "".join(
@@ -1891,7 +1891,7 @@ class HLSProxy:
             full_proxy_url = f"{proxy_base}{endpoint}?d={encoded_url}{header_params}"
 
             if redirect_stream:
-                logger.info(f"↪️ Redirecting to: {full_proxy_url}")
+                logger.debug(f"↪️ Redirecting to: {full_proxy_url}")
                 return web.HTTPFound(full_proxy_url)
 
             # 2. URL PULITO (Per il JSON stile MediaFlow)
@@ -1945,7 +1945,7 @@ class HLSProxy:
             # 1. Modalità ClearKey Statica
             clearkey_param = request.query.get("clearkey")
             if clearkey_param:
-                logger.info(f"🔑 Static ClearKey license request: {clearkey_param}")
+                logger.debug(f"🔑 Static ClearKey license request: {clearkey_param}")
                 try:
                     # Support multiple keys separated by comma
                     # Format: KID1:KEY1,KID2:KEY2
@@ -2105,19 +2105,19 @@ class HLSProxy:
                         continue
                     headers[header_name] = param_value
 
-            logger.info(f"🔑 Fetching AES key from: {key_url}")
-            logger.info(f"   -> with headers: {headers}")
+            logger.debug(f"🔑 Fetching AES key from: {key_url}")
+            logger.debug(f"   -> with headers: {headers}")
 
             # ✅ Use pooled session for better performance
             # The session already has the proxy configured in its connector
             if self._should_force_direct_from_query(request):
                 session = await self._get_session(url=key_url)
                 proxy_used = None
-                logger.info("Using direct session for AES key request (forced)")
+                logger.debug("Using direct session for AES key request (forced)")
             else:
                 session, proxy_used = await self._get_proxy_session(key_url)
                 if proxy_used:
-                    logger.info(f"Using pooled session with proxy: {proxy_used}")
+                    logger.debug(f"Using pooled session with proxy: {proxy_used}")
             secret_key = headers.pop("X-Secret-Key", None)
 
             # Calcola X-Key-Timestamp, X-Key-Nonce, X-Fingerprint, e X-Key-Path se abbiamo la secret_key
@@ -2137,7 +2137,7 @@ class HLSProxy:
                     headers["X-Key-Nonce"] = str(nonce)
                     headers["X-Fingerprint"] = fingerprint
                     headers["X-Key-Path"] = key_path
-                    logger.info(
+                    logger.debug(
                         f"🔐 Computed key headers: ts={ts}, nonce={nonce}, fingerprint={fingerprint}, key_path={key_path}"
                     )
                 else:
@@ -2145,21 +2145,21 @@ class HLSProxy:
 
             # Caso 'auth' - URL che contengono 'auth' richiedono headers speciali
             if "auth" in key_url.lower():
-                logger.info(
+                logger.debug(
                     f"🔐 Detected 'auth' key URL, ensuring special headers are present"
                 )
                 if "X-User-Agent" not in headers:
                     headers["X-User-Agent"] = headers.get(
                         "User-Agent", headers.get("user-agent", "Mozilla/5.0")
                     )
-                logger.info(
+                logger.debug(
                     f"🔐 Auth key headers: Authorization={'***' if headers.get('Authorization') else 'missing'}, X-Channel-Key={headers.get('X-Channel-Key', 'missing')}, X-User-Agent={headers.get('X-User-Agent', 'missing')}"
                 )
 
             async with session.get(key_url, headers=headers) as resp:
                 if resp.status == 200 or resp.status == 206:
                     key_data = await resp.read()
-                    logger.info(
+                    logger.debug(
                         f"✅ AES key fetched successfully: {len(key_data)} bytes"
                     )
 
@@ -2645,7 +2645,7 @@ class HLSProxy:
                     if not current_hls_sid and headers:
                         current_hls_sid = f"sid_{int(time.time())}_{random.getrandbits(16)}"
                         self.hls_header_sessions[current_hls_sid] = headers
-                        logger.info(f"🆕 Created HLS header session in proxy: {current_hls_sid}")
+                        logger.debug(f"🆕 Created HLS header session in proxy: {current_hls_sid}")
 
                     rewritten = await ManifestRewriter.rewrite_manifest_urls(
                         manifest_content=manifest_content,
@@ -2730,7 +2730,7 @@ class HLSProxy:
                                     clearkey_param,
                                 )
                                 # Log first few lines for debugging
-                                logger.info(
+                                logger.debug(
                                     f"📜 Generated Media Playlist for {rep_id} (first 10 lines):\n{chr(10).join(hls_playlist.splitlines()[:10])}"
                                 )
                             else:
@@ -2741,7 +2741,7 @@ class HLSProxy:
                                     stream_url,
                                     request.query_string,
                                 )
-                                logger.info(
+                                logger.debug(
                                     f"📜 Generated Master Playlist (first 5 lines):\n{chr(10).join(hls_playlist.splitlines()[:5])}"
                                 )
 

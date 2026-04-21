@@ -89,7 +89,7 @@ class UqloadExtractor:
         (.io / .is / .com / .to).
         """
         session = await self._get_session(url)
-        logger.info(f"[Uqload] Fetching embed page: {url}")
+        logger.debug(f"[Uqload] Fetching embed page: {url}")
 
         async with session.get(url, headers=self.BROWSER_HEADERS, allow_redirects=True) as response:
             final_url = str(response.url)
@@ -99,7 +99,7 @@ class UqloadExtractor:
                 )
             text = await response.text(errors="replace")
 
-        logger.info(f"[Uqload] Page length: {len(text)} chars, final URL: {final_url}")
+        logger.debug(f"[Uqload] Page length: {len(text)} chars, final URL: {final_url}")
 
         # Check for common error pages
         if "file was deleted" in text.lower() or "file not found" in text.lower() or "not found" in text.lower():
@@ -110,7 +110,7 @@ class UqloadExtractor:
             m = re.search(pattern, text, re.IGNORECASE)
             if m:
                 video_url = m.group(1).strip() if m.lastindex else m.group(0).strip()
-                logger.info(f"[Uqload] Pattern #{i} matched: {video_url[:80]}...")
+                logger.debug(f"[Uqload] Pattern #{i} matched: {video_url[:80]}...")
                 break
 
         if not video_url:
