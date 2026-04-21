@@ -1,0 +1,66 @@
+# EasyProxy Light + WARP (no FFmpeg, no FlareSolverr, no Byparr, no Chromium/Xvfb)
+# Ottimizzato per streaming MPD/DASH su Render (RAM ~160 MB a riposo, ~350 MB sotto carico)
+#
+# Cosa include:
+#   ✅ Cloudflare WARP (SOCKS5 proxy su 127.0.0.1:1080)
+#   ✅ EasyProxy core (aiohttp, extractors, mpd_converter, drm_decrypter)
+#   ✅ curl_cffi (browser impersonation per domini protetti)
+#   ✅ pycryptodome (decrittazione CENC/DRM per MPD)
+#
+# Cosa NON include (risparmio ~450 MB RAM):
+#   ❌ FFmpeg (non serve con MPD_MODE=none)
+#   ❌ FlareSolverr + Chromium driver (non serve per MPD)
+#   ❌ Byparr (non serve per MPD)
+#   ❌ Xvfb (serviva solo per Chromium headless di FlareSolverr)
+#   ❌ Playwright Chromium browser (~200 MB, non serve per MPD)
+#
+# Variabili d'ambiente consigliate su Render:
+#   API_PASSWORD=la_tua_pass
+#   MPD_MODE=none
+#   PORT=7860
+#   ENABLE_WARP=true
+#   WORKERS=1
+
+FROM python:3.12-slim-bookworm
+
+WORKDIR /app
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
+# Salta il download del browser Playwright (non serve, risparmia ~200 MB)
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+
+# 1. Dipendenze di sistema: curl + gpg (per WARP repo) + cloudflare-warp + netcat (per health check WARP)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    gnupg \
+    gpg \
+    ca-certificates \
+    netcat-openbsd \
+    && curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg \
+       | gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ bookworm main" \
+       | tee /etc/apt/sources.list.d/cloudflare-client.list \
+    && apt-get update && apt-get install -y --no-install-recommends \
+       cloudflare-warp \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2. Dipendenze Python (requirements.txt è lo stesso per tutte le versioni)
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 3. Codice applicazione
+COPY . .
+
+# Fix Python package structure (come in Dockerfile.full e Dockerfile-hf)
+RUN touch __init__.py services/__init__.py extractors/__init__.py utils/__init__.py routes/__init__.py
+
+# 4. Entrypoint script
+# Necessario perché WARP richiede una sequenza di inizializzazione
+# con logica condizionale (attesa, retry, registrazione, connessione)
+# che non può essere fatta in un semplice CMD inline.
+RUN chmod +x /app/entrypoint-light-warp.sh
+
+EXPOSE 7860
+
+ENTRYPOINT ["/bin/bash", "/app/entrypoint-light-warp.sh"]
