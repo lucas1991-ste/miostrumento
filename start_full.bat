@@ -51,24 +51,26 @@ IF NOT EXIST "byparr\" (
 echo Starting Solvers in background...
 
 IF EXIST "flaresolverr\src\flaresolverr.py" (
-    powershell -NoProfile -Command "exit $(if (Test-NetConnection -ComputerName '127.0.0.1' -Port %FLARESOLVERR_PORT% -InformationLevel Quiet) { 0 } else { 1 })" >nul 2>&1
-    IF %ERRORLEVEL% EQU 0 (
-        echo [OK] FlareSolverr already active on port %FLARESOLVERR_PORT%.
-    ) ELSE (
+    powershell -NoProfile -Command ^
+        "$resp = $null; try { $resp = Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:%FLARESOLVERR_PORT%/' -TimeoutSec 3 } catch {}; " ^
+        "if ($resp -and $resp.Content -match 'FlareSolverr') { exit 0 } else { exit 1 }" >nul 2>&1
+    IF ERRORLEVEL 1 (
         echo [OK] Starting FlareSolverr on port %FLARESOLVERR_PORT%...
         set PORT=%FLARESOLVERR_PORT%
         start "FlareSolverr" /MIN python "flaresolverr\src\flaresolverr.py"
+    ) ELSE (
+        echo [OK] FlareSolverr already active on port %FLARESOLVERR_PORT%.
     )
 )
 
 IF EXIST "byparr\main.py" (
     powershell -NoProfile -Command "exit $(if (Test-NetConnection -ComputerName '127.0.0.1' -Port %BYPARR_PORT% -InformationLevel Quiet) { 0 } else { 1 })" >nul 2>&1
-    IF %ERRORLEVEL% EQU 0 (
-        echo [OK] Byparr already active on port %BYPARR_PORT%.
-    ) ELSE (
+    IF ERRORLEVEL 1 (
         echo [OK] Starting Byparr on port %BYPARR_PORT%...
         set PORT=%BYPARR_PORT%
         start "Byparr" /MIN python "byparr\main.py"
+    ) ELSE (
+        echo [OK] Byparr already active on port %BYPARR_PORT%.
     )
 )
 
