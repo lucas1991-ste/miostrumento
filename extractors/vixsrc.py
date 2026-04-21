@@ -52,6 +52,31 @@ class VixSrcExtractor:
         headers.update(extra_headers)
         return headers
 
+    def _merge_request_headers(self, incoming_headers: dict | None = None, **extra_headers) -> dict:
+        """Merge caller headers with sane VixSrc defaults, preserving referer/origin context."""
+        merged = self._fresh_headers()
+        for header_source in (self.request_headers, incoming_headers or {}):
+            if not header_source:
+                continue
+            for key, value in header_source.items():
+                if value is None:
+                    continue
+                merged[key] = value
+
+        # VixSrc child manifests/segments often need embed/movie context.
+        if not any(k.lower() == "referer" for k in merged):
+            merged["Referer"] = extra_headers.get("referer") or extra_headers.get("Referer")
+        if not any(k.lower() == "origin" for k in merged):
+            origin_value = extra_headers.get("origin") or extra_headers.get("Origin")
+            if origin_value:
+                merged["Origin"] = origin_value
+
+        for key, value in extra_headers.items():
+            if value is not None:
+                merged[key] = value
+
+        return merged
+
     @staticmethod
     def _normalize_base_site(url: str) -> str:
         parsed = urlparse(url)
@@ -386,12 +411,22 @@ class VixSrcExtractor:
         try:
             parsed_url = urlparse(url)
             response = None
+            incoming_headers = kwargs.get("request_headers") or {}
 
             if "/playlist/" in parsed_url.path:
                 logger.info("URL is already a VixSrc manifest, no extraction required.")
+                base_site = self._normalize_base_site(url)
                 return {
                     "destination_url": url,
-                    "request_headers": self._fresh_headers(),
+                    "request_headers": self._merge_request_headers(
+                        incoming_headers,
+                        Referer=incoming_headers.get("Referer")
+                        or incoming_headers.get("referer")
+                        or f"{base_site}/",
+                        Origin=incoming_headers.get("Origin")
+                        or incoming_headers.get("origin")
+                        or base_site,
+                    ),
                     "mediaflow_endpoint": self.mediaflow_endpoint,
                 }
 
