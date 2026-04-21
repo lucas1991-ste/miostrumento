@@ -307,6 +307,8 @@ class ManifestRewriter:
                     continue
                 if stripped.startswith("#EXT-X-MEDIA:"):
                     continue
+                if stripped.startswith("#EXT-X-I-FRAME-STREAM-INF:"):
+                    continue
                 if stripped == "#EXTM3U":
                     continue
                 rewritten_lines.append(stripped)
