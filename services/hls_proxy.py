@@ -2110,17 +2110,48 @@ class HLSProxy:
             # Avoid unquoting again or embedded encoded URLs may break.
 
             original_channel_url = request.query.get("original_channel_url")
+            
+            # Detect DLStreams keys by multiple signals:
+            # 1. original_channel_url contains known domains
+            # 2. key_url matches /key/premium pattern (CDN rotates domains)
+            # 3. original_channel_url contains the mono.css manifest pattern
+            is_dlstreams_key = False
             if original_channel_url and any(
-                marker in original_channel_url for marker in ["dlhd.dad", "dlstreams.top"]
+                marker in original_channel_url for marker in ["dlhd.dad", "dlstreams.top", "dlstreams.com"]
             ):
+                is_dlstreams_key = True
+            elif re.search(r"/key/premium\d+/", key_url):
+                is_dlstreams_key = True
+            elif original_channel_url and re.search(r"/proxy/.+/premium\d+/mono\.css", original_channel_url):
+                is_dlstreams_key = True
+
+            if is_dlstreams_key:
+                # First check if the DLStreams extractor already has this key cached
+                dlstreams_extractor = self.extractors.get("dlstreams")
+                if dlstreams_extractor and hasattr(dlstreams_extractor, "_browser_key_cache"):
+                    cached_key = dlstreams_extractor._browser_key_cache.get(key_url)
+                    if cached_key:
+                        logger.info("✅ AES key served from DLStreams browser cache (%d bytes)", len(cached_key))
+                        return web.Response(
+                            body=cached_key,
+                            content_type="application/octet-stream",
+                            headers={
+                                "Access-Control-Allow-Origin": "*",
+                                "Access-Control-Allow-Headers": "*",
+                                "Cache-Control": "no-cache, no-store, must-revalidate",
+                            },
+                        )
+
+                # Fallback: try browser-based key fetch
                 try:
-                    extractor = await self.get_extractor(original_channel_url, {})
-                    if hasattr(extractor, "fetch_key_via_browser"):
-                        browser_key = await extractor.fetch_key_via_browser(
-                            key_url, original_channel_url
+                    if dlstreams_extractor and hasattr(dlstreams_extractor, "fetch_key_via_browser"):
+                        # Use original_channel_url or reconstruct from key_url
+                        fetch_url = original_channel_url or key_url
+                        browser_key = await dlstreams_extractor.fetch_key_via_browser(
+                            key_url, fetch_url
                         )
                         if browser_key:
-                            logger.info("✅ AES key fetched via browser context")
+                            logger.info("✅ AES key fetched via browser context (%d bytes)", len(browser_key))
                             return web.Response(
                                 body=browser_key,
                                 content_type="application/octet-stream",
@@ -2130,6 +2161,24 @@ class HLSProxy:
                                     "Cache-Control": "no-cache, no-store, must-revalidate",
                                 },
                             )
+                    elif original_channel_url:
+                        # Try to get extractor via original URL
+                        extractor = await self.get_extractor(original_channel_url, {})
+                        if hasattr(extractor, "fetch_key_via_browser"):
+                            browser_key = await extractor.fetch_key_via_browser(
+                                key_url, original_channel_url
+                            )
+                            if browser_key:
+                                logger.info("✅ AES key fetched via browser context (%d bytes)", len(browser_key))
+                                return web.Response(
+                                    body=browser_key,
+                                    content_type="application/octet-stream",
+                                    headers={
+                                        "Access-Control-Allow-Origin": "*",
+                                        "Access-Control-Allow-Headers": "*",
+                                        "Cache-Control": "no-cache, no-store, must-revalidate",
+                                    },
+                                )
                 except Exception as browser_key_exc:
                     logger.warning(
                         f"⚠️ Browser-backed key fetch failed, falling back to direct request: {browser_key_exc}"
@@ -2204,6 +2253,14 @@ class HLSProxy:
                     logger.debug(
                         f"✅ AES key fetched successfully: {len(key_data)} bytes"
                     )
+
+                    # Warn if key size is unexpected (AES-128 = 16 bytes)
+                    if len(key_data) != 16 and is_dlstreams_key:
+                        logger.warning(
+                            f"⚠️ DLStreams AES key response is {len(key_data)} bytes (expected 16). "
+                            f"The CDN may have returned an error page instead of the key. "
+                            f"Session cookies may be missing."
+                        )
 
                     return web.Response(
                         body=key_data,
