@@ -66,7 +66,7 @@ The **Full** stack (Proxy + Solvers) is fully supported on Android via Termux + 
 1.  **Install Termux** from [F-Droid](https://f-droid.org/en/packages/com.termux/) (do NOT use Play Store version).
 2.  **Run the One-Shot Setup**:
     ```bash
-    curl -sL "https://raw.githubusercontent.com/realbestia1/EasyProxy/dev/termux-setup/termux_setup.sh?$(date +%s)" | bash
+    curl -sL "https://raw.githubusercontent.com/realbestia1/EasyProxy/main/termux_setup.sh?$(date +%s)" | bash
     ```
 3.  **Prevent Termux from Sleeping**:
     - **Wake Lock**: Swipe down your notification bar and click **"Acquire wake-lock"** on the Termux notification.
