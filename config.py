@@ -1,6 +1,8 @@
 import os
 import logging
 import random
+import socket
+import time
 from dotenv import load_dotenv
 
 load_dotenv() # Load variables from .env file
@@ -89,10 +91,42 @@ def parse_transport_routes() -> list:
 
     return routes
 
+# --- Proxy Health Check ---
+_PROXY_STATUS_CACHE = {"alive": True, "last_check": 0}
+
+def is_proxy_alive(proxy_url: str) -> bool:
+    """Checks if a local proxy is reachable to avoid 'Connection Refused' errors."""
+    if not proxy_url or "127.0.0.1" not in proxy_url:
+        return True
+    
+    now = time.time()
+    # Cache result for 10 seconds to avoid overhead
+    if now - _PROXY_STATUS_CACHE["last_check"] < 10:
+        return _PROXY_STATUS_CACHE["alive"]
+    
+    _PROXY_STATUS_CACHE["last_check"] = now
+    try:
+        # Simple TCP check for the proxy port
+        host = "127.0.0.1"
+        port = 1080
+        if ":" in proxy_url:
+            port_part = proxy_url.split(":")[-1].split("/")[0]
+            if port_part.isdigit():
+                port = int(port_part)
+        
+        with socket.create_connection((host, port), timeout=0.5):
+            _PROXY_STATUS_CACHE["alive"] = True
+            return True
+    except (socket.timeout, ConnectionRefusedError, OSError):
+        _PROXY_STATUS_CACHE["alive"] = False
+        logging.warning(f"⚠️ Local proxy {proxy_url} is NOT reachable. Falling back to direct connection.")
+        return False
+
 def get_proxy_for_url(url: str, transport_routes: list, global_proxies: list) -> str:
     """Trova il proxy appropriato per un URL basato su TRANSPORT_ROUTES e impostazioni WARP."""
     if not url:
-        return random.choice(global_proxies) if global_proxies else None
+        proxy = random.choice(global_proxies) if global_proxies else None
+        return proxy if is_proxy_alive(proxy) else None
 
     # 0. Bypass esplicito tramite flag nell'URL (forzato da estrattori)
     if "direct=1" in url or "warp=off" in url or "warp_bypass=1" in url:
@@ -111,10 +145,15 @@ def get_proxy_for_url(url: str, transport_routes: list, global_proxies: list) ->
         # Controlla se l'URL deve essere escluso (bypass diretto)
         if any(domain in url.lower() for domain in WARP_EXCLUDE_DOMAINS):
             return None
-        return WARP_PROXY_URL
+        
+        # Verifica se il proxy WARP è effettivamente attivo prima di restituirlo
+        if is_proxy_alive(WARP_PROXY_URL):
+            return WARP_PROXY_URL
+        return None
 
     # 3. Se non trova corrispondenza e WARP è spento, usa global proxies
-    return random.choice(global_proxies) if global_proxies else None
+    proxy = random.choice(global_proxies) if global_proxies else None
+    return proxy if is_proxy_alive(proxy) else None
 
 def get_connector_for_proxy(proxy_url: str, **kwargs):
     """Crea un ProxyConnector (aiohttp-socks) gestendo correttamente socks5h."""
@@ -192,7 +231,7 @@ MAX_RECORDING_DURATION = int(os.environ.get("MAX_RECORDING_DURATION", 28800))  #
 RECORDINGS_RETENTION_DAYS = int(os.environ.get("RECORDINGS_RETENTION_DAYS", 7))  # Auto-cleanup after 7 days
 
 # --- Version/Mode Configuration ---
-APP_VERSION = "2.5.71"
+APP_VERSION = "2.5.73"
 
 # Detect if we are running in Full or Light mode
 _has_solvers = os.path.exists("flaresolverr") and (os.path.exists("byparr") or os.path.exists("byparr_src"))

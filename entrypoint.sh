@@ -58,16 +58,24 @@ if [ "$ENABLE_WARP" = "true" ]; then
         
         warp-cli --accept-tos connect
         
-        # Small delay for connection to stabilize
-        echo "⏳ Waiting for WARP to stabilize (10s)..."
-        sleep 10
-        
-        # Check if SOCKS5 proxy is actually listening
-        if nc -z 127.0.0.1 1080; then
-            echo "✅ WARP SOCKS5 proxy is listening on port 1080."
-        else
-            echo "⚠️ WARP SOCKS5 proxy not detected yet, but proceeding..."
-        fi
+        # Wait for SOCKS5 proxy to be ready and functional
+        echo "⏳ Waiting for WARP SOCKS5 proxy (port 1080) to start..."
+        MAX_WAIT=10
+        for i in $(seq 1 $MAX_WAIT); do
+            if nc -z 127.0.0.1 1080; then
+                echo "✅ WARP SOCKS5 proxy is listening on port 1080."
+                # Optional: Test actual internet connectivity through proxy
+                if curl -sx socks5h://127.0.0.1:1080 https://www.google.com -o /dev/null -m 5 > /dev/null 2>&1; then
+                    echo "✅ WARP SOCKS5 proxy is functional (Internet OK)."
+                    break
+                else
+                    echo "⏳ WARP port is open, but waiting for internet connectivity... ($i/$MAX_WAIT)"
+                fi
+            else
+                echo "⏳ Waiting for WARP port 1080... ($i/$MAX_WAIT)"
+            fi
+            sleep 1
+        done
         
         warp-cli --accept-tos status
     fi
@@ -77,9 +85,9 @@ fi
 PROXY_VARS=""
 if [ "$ENABLE_WARP" = "true" ]; then
     # We use socks5h:// to ensure remote DNS resolution for sub-processes
-    # We add NO_PROXY to ensure local communication (e.g. FlareSolverr -> chromedriver) doesn't use the proxy
-    PROXY_VARS="HTTP_PROXY=socks5h://127.0.0.1:1080 HTTPS_PROXY=socks5h://127.0.0.1:1080 ALL_PROXY=socks5h://127.0.0.1:1080 NO_PROXY=localhost,127.0.0.1 no_proxy=localhost,127.0.0.1"
-    echo "🌐 FlareSolverr/Byparr will use WARP proxy (excluding local traffic)..."
+    # We add NO_PROXY to ensure local communication and GitHub updates (for Camoufox/Byparr) don't use the proxy
+    PROXY_VARS="HTTP_PROXY=socks5h://127.0.0.1:1080 HTTPS_PROXY=socks5h://127.0.0.1:1080 ALL_PROXY=socks5h://127.0.0.1:1080 NO_PROXY=localhost,127.0.0.1,api.github.com,github.com no_proxy=localhost,127.0.0.1,api.github.com,github.com"
+    echo "🌐 FlareSolverr/Byparr will use WARP proxy (excluding local/GitHub traffic)..."
 fi
 
 # Start FlareSolverr in the background

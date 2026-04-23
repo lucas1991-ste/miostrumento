@@ -88,7 +88,7 @@ proot-distro login $DISTRO_NAME -- bash -c '
         python3 python3-venv python3.13-venv python-is-python3 git curl wget ffmpeg \
         libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 \
         libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2t64 libpango-1.0-0 libcairo2 \
-        libatspi2.0-0 fonts-liberation ca-certificates chromium chromium-driver \
+        libatspi2.0-0 fonts-liberation ca-certificates chromium chromium-driver procps \
         libxshmfence1 libglu1-mesa libx11-xcb1 libxcb-dri3-0 libxss1 libxtst6 libxslt1.1 || true
 
     # Manual Pip fallback
@@ -142,6 +142,7 @@ proot-distro login $DISTRO_NAME -- bash -c '
     cd "$EP_DIR/byparr_src"
     sed -i "s/requires-python = .*/requires-python = \">= 3.11\"/" pyproject.toml 2>/dev/null || true
     pip install --no-cache-dir --ignore-installed . --break-system-packages || true
+    python3 -m camoufox fetch || true
 
     # Explicitly install missing critical deps
     echo "[ℹ️] Installing critical dependencies..."
@@ -258,9 +259,13 @@ chmod +x "$PREFIX/bin/easyproxy-update"
 # Create stop command  
 cat > "$PREFIX/bin/easyproxy-stop" << 'STOP_EOF'
 #!/data/data/com.termux/files/usr/bin/bash
-echo "🛑 Stopping EasyProxy..."
-proot-distro login ubuntu -- bash -c 'pkill -f flaresolverr; pkill -f byparr; pkill -f "aiohttp\|gunicorn\|app:app"; pkill Xvfb' 2>/dev/null
+echo "🛑 Stopping EasyProxy and all solvers..."
+# Kill processes inside Ubuntu
+proot-distro login ubuntu -- bash -c 'pkill -9 -f "python3.*(app|flaresolverr|byparr|main.py|easyproxy_start)"; pkill -9 -f "gunicorn"; pkill -9 Xvfb' 2>/dev/null
+# Kill the screen session from Termux
 screen -X -S easyproxy quit 2>/dev/null || true
+# Final cleanup of any lingering proot processes
+pkill -9 -f "proot-distro.*ubuntu" 2>/dev/null || true
 echo "✅ Stopped."
 STOP_EOF
 chmod +x "$PREFIX/bin/easyproxy-stop"

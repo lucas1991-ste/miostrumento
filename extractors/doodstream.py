@@ -115,8 +115,8 @@ class DoodStreamExtractor:
             self.cache.set(urlparse(url).netloc, cookies, ua)
 
         if "pass_md5" not in html:
-            logger.debug("DoodStream: pass_md5 not found, waiting 2s for Byparr resolution...")
-            await asyncio.sleep(2)
+            logger.debug("DoodStream: pass_md5 not found, waiting 20s for Byparr resolution...")
+            await asyncio.sleep(20)
             solution = await self._request_byparr(embed_url)
             html = solution.get("response", "")
             if "pass_md5" not in html:
