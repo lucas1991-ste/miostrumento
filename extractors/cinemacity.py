@@ -52,6 +52,7 @@ class CinemaCityExtractor:
             "cmd": cmd,
             "maxTimeout": (self.flaresolverr_timeout + 60) * 1000,
         }
+        fs_headers = {}
         if url: 
             payload["url"] = url
             # Determina dinamicamente il proxy per questo specifico URL
@@ -59,7 +60,12 @@ class CinemaCityExtractor:
             if proxy:
                 # FlareSolverr richiede il proxy nel formato {"url": "..."}
                 payload["proxy"] = {"url": proxy}
-                logger.debug(f"CinemaCity: Passing proxy to FlareSolverr: {proxy}")
+                # Support Byparr specific implementation (headers instead of JSON)
+                clean_proxy = proxy
+                if clean_proxy.startswith("socks5h://"):
+                    clean_proxy = clean_proxy.replace("socks5h://", "socks5://")
+                fs_headers["X-Proxy-Server"] = clean_proxy
+                logger.debug(f"CinemaCity: Passing proxy to FlareSolverr/Byparr: {clean_proxy}")
 
         if post_data: payload["postData"] = post_data
 
@@ -68,6 +74,7 @@ class CinemaCityExtractor:
                 async with session.post(
                     endpoint,
                     json=payload,
+                    headers=fs_headers,
                     timeout=aiohttp.ClientTimeout(total=self.flaresolverr_timeout + 95),
                 ) as resp:
                     if resp.status != 200:

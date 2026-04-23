@@ -78,15 +78,25 @@ class DoodStreamExtractor:
         
         # Determina dinamicamente il proxy per questo specifico URL
         proxy = get_proxy_for_url(url, TRANSPORT_ROUTES, self.proxies)
+        headers = {}
         if proxy:
+            # FlareSolverr style (JSON payload)
             payload["proxy"] = {"url": proxy}
-            logger.debug(f"DoodStream: Passing proxy to Byparr: {proxy}")
+            
+            # Byparr style (Header) - Ensure socks5h is converted to socks5 for Playwright compatibility
+            clean_proxy = proxy
+            if clean_proxy.startswith("socks5h://"):
+                clean_proxy = clean_proxy.replace("socks5h://", "socks5://")
+            
+            headers["X-Proxy-Server"] = clean_proxy
+            logger.debug(f"DoodStream: Passing cleaned proxy to Byparr: {clean_proxy}")
 
         async with aiohttp.ClientSession() as session:
             try:
                 async with session.post(
                     endpoint,
                     json=payload,
+                    headers=headers,
                     timeout=aiohttp.ClientTimeout(total=75),
                 ) as resp:
                     if resp.status != 200:
@@ -115,12 +125,7 @@ class DoodStreamExtractor:
             self.cache.set(urlparse(url).netloc, cookies, ua)
 
         if "pass_md5" not in html:
-            logger.debug("DoodStream: pass_md5 not found, waiting 20s for Byparr resolution...")
-            await asyncio.sleep(20)
-            solution = await self._request_byparr(embed_url)
-            html = solution.get("response", "")
-            if "pass_md5" not in html:
-                 raise ExtractorError("DoodStream: Byparr failed to solve the challenge correctly")
+             raise ExtractorError("DoodStream: Byparr failed to solve the challenge correctly (pass_md5 not found)")
 
         return await self._parse_embed_html(html, base_url, ua, use_byparr=True)
 
@@ -164,21 +169,8 @@ class DoodStreamExtractor:
         }
 
         base_stream = None
-        if settings.byparr_url:
-            logger.debug(f"DoodStream: Fetching pass_md5 via Byparr")
-            try:
-                # Use Byparr's specialized /proxy for text/body extraction
-                async with aiohttp.ClientSession() as session:
-                    async with session.get(
-                        f"{settings.byparr_url}/proxy",
-                        params={"url": pass_url, "ua": ua, "ref": "https://doodstream.com/"},
-                        timeout=aiohttp.ClientTimeout(total=30)
-                    ) as resp:
-                        if resp.status == 200:
-                            base_stream = await resp.text()
-                            base_stream = base_stream.strip()
-            except Exception as e:
-                logger.warning(f"DoodStream: Byparr /proxy call failed: {e}")
+        # Note: Byparr /proxy endpoint was removed as it's not implemented in this version.
+        # We fall back to direct request which should work if IP consistency is maintained via same proxy.
 
         if not base_stream:
             # Last resort fallback to direct request (might fail due to IP consistency)

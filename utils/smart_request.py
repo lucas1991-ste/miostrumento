@@ -115,12 +115,20 @@ async def smart_request(cmd: str, url: str, headers: Optional[Dict] = None, post
     if post_data: payload["postData"] = post_data
     if proxy:
         payload["proxy"] = {"url": proxy}
+        # Support Byparr specific implementation (headers instead of JSON)
+        clean_proxy = proxy
+        if clean_proxy.startswith("socks5h://"):
+            clean_proxy = clean_proxy.replace("socks5h://", "socks5://")
+        headers_for_fs = {"X-Proxy-Server": clean_proxy}
+    else:
+        headers_for_fs = {}
 
     async with aiohttp.ClientSession() as fs_session:
         try:
             async with fs_session.post(
                 endpoint,
                 json=payload,
+                headers=headers_for_fs,
                 timeout=aiohttp.ClientTimeout(total=FLARESOLVERR_TIMEOUT + 95),
             ) as resp:
                 if resp.status == 200:
