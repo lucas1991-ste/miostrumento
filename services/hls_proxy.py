@@ -39,6 +39,7 @@ from config import (
     TRANSPORT_ROUTES,
     get_proxy_for_url,
     get_ssl_setting_for_url,
+    get_connector_for_proxy,
     API_PASSWORD,
     check_password,
     MPD_MODE,
@@ -1891,6 +1892,9 @@ class HLSProxy:
             extractor = await self.get_extractor(
                 url, dict(request.headers), host=host_param
             )
+            extractor = await self.get_extractor(
+                url, dict(request.headers), host=host_param
+            )
             result = await extractor.extract(url, **extractor_kwargs)
 
             stream_url = result["destination_url"]
@@ -2337,6 +2341,19 @@ class HLSProxy:
     async def _proxy_segment(self, request, segment_url, stream_headers, segment_name):
         """✅ NUOVO: Proxy dedicato per segmenti .ts con Content-Disposition"""
         try:
+            # Ping DLStreams extractor to keep browser alive during playback
+            # Use robust markers: Daddy's domains, 'premium' pattern, 'mono.css', or Referer/Origin headers
+            is_dlstreams = any(m in segment_url for m in ["dlhd.dad", "dlstreams", "premium", "mono.css"])
+            if not is_dlstreams:
+                ref = request.query.get("h_Referer", "") or request.headers.get("Referer", "")
+                origin = request.query.get("h_Origin", "") or request.headers.get("Origin", "")
+                is_dlstreams = any(m in (ref + origin).lower() for m in ["dlhd.dad", "dlstreams"])
+            
+            if is_dlstreams:
+                ext = self.extractors.get("dlstreams")
+                if ext and hasattr(ext, "_update_shared_activity"):
+                    ext._update_shared_activity()
+
             headers = dict(stream_headers)
             is_cccdn_stream = "cccdn.net" in segment_url
 
@@ -2424,6 +2441,19 @@ class HLSProxy:
     async def _proxy_stream(self, request, stream_url, stream_headers):
         """Effettua il proxy dello stream con gestione manifest e AES-128"""
         try:
+            # Ping DLStreams extractor to keep browser alive during playback
+            # Use robust markers: Daddy's domains, 'premium' pattern, 'mono.css', or Referer/Origin headers
+            is_dlstreams = any(m in stream_url for m in ["dlhd.dad", "dlstreams", "premium", "mono.css"])
+            if not is_dlstreams:
+                ref = request.query.get("h_Referer", "") or request.headers.get("Referer", "")
+                origin = request.query.get("h_Origin", "") or request.headers.get("Origin", "")
+                is_dlstreams = any(m in (ref + origin).lower() for m in ["dlhd.dad", "dlstreams"])
+
+            if is_dlstreams:
+                ext = self.extractors.get("dlstreams")
+                if ext and hasattr(ext, "_update_shared_activity"):
+                    ext._update_shared_activity()
+
             headers = dict(stream_headers)
 
             def set_response_header(target: dict, name: str, value: str):

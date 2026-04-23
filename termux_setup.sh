@@ -48,7 +48,7 @@ termux-setup-storage 2>/dev/null || true
 
 # Update and install base packages
 pkg update -y
-pkg install -y proot-distro git pulseaudio wget
+pkg install -y proot-distro git pulseaudio wget screen
 
 log "Termux packages installed."
 
@@ -85,7 +85,7 @@ proot-distro login $DISTRO_NAME -- bash -c '
     
     echo "[ℹ️] Inside Ubuntu: Installing bare minimum Python & stable Browser..."
     apt-get install -y --fix-missing \
-        python3 python3-venv python3.13-venv python-is-python3 git curl wget ffmpeg xvfb xauth \
+        python3 python3-venv python3.13-venv python-is-python3 git curl wget ffmpeg \
         libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 \
         libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2t64 libpango-1.0-0 libcairo2 \
         libatspi2.0-0 fonts-liberation ca-certificates chromium chromium-driver \
@@ -129,7 +129,10 @@ proot-distro login $DISTRO_NAME -- bash -c '
         git clone https://github.com/FlareSolverr/FlareSolverr.git "$EP_DIR/flaresolverr"
     fi
     cd "$EP_DIR/flaresolverr"
-    sed -i "s|options.add_argument('--no-sandbox')|options.add_argument('--no-sandbox'); options.add_argument('--disable-dev-shm-usage'); options.add_argument('--disable-gpu')|" src/utils.py 2>/dev/null || true
+    # Reset utils.py to original state before patching (handles re-runs)
+    git checkout -- src/utils.py 2>/dev/null || true
+    sed -i "s|options.add_argument('--no-sandbox')|options.add_argument('--no-sandbox'); options.add_argument('--disable-dev-shm-usage'); options.add_argument('--disable-gpu'); options.add_argument('--headless=new')|" src/utils.py 2>/dev/null || true
+    sed -i "s|^\([[:space:]]*\)start_xvfb_display()|\1pass|g" src/utils.py 2>/dev/null || true
     sed -i "s|driver_executable_path=driver_exe_path|driver_executable_path=\"/usr/bin/chromedriver\"|" src/utils.py 2>/dev/null || true
     pip install --no-cache-dir --ignore-installed -r requirements.txt --break-system-packages || true
 
@@ -164,11 +167,17 @@ cat > "$PROOT_ROOTFS/easyproxy_start.sh" << 'LAUNCHER_EOF'
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
 export PIP_BREAK_SYSTEM_PACKAGES=1
 export PORT=7860
-export DISPLAY=:99
 export ENABLE_WARP=false
-export CHROME_BIN="/usr/bin/chromium-browser"
-export CHROME_EXE_PATH=/usr/bin/chromium-browser
-export CHROME_DRIVER_PATH=/usr/bin/chromedriver
+
+# Auto-detect Chromium path
+if [ -f "/usr/bin/chromium" ]; then
+    export CHROME_BIN="/usr/bin/chromium"
+elif [ -f "/usr/bin/chromium-browser" ]; then
+    export CHROME_BIN="/usr/bin/chromium-browser"
+fi
+
+export CHROME_EXE_PATH="$CHROME_BIN"
+export CHROME_DRIVER_PATH="/usr/bin/chromedriver"
 export FLARESOLVERR_URL=http://localhost:8191
 export BYPARR_URL=http://localhost:8192
 
@@ -182,24 +191,17 @@ fi
 PORT=${PORT:-7860}
 
 # Kill any existing processes
-pkill -9 Xvfb python3 node 2>/dev/null || true
-rm -f /tmp/.X99-lock 2>/dev/null || true
+pkill -9 python3 node 2>/dev/null || true
 
 echo ""
 echo "╔══════════════════════════════════════════╗"
 echo "║     EasyProxy Full - Termux Edition      ║"
-echo "║     Port: $PORT | WARP: Disabled          ║"
+echo "║     Port: $PORT | Mode: Headless          ║"
 echo "╚══════════════════════════════════════════╝"
 echo ""
 
-# Start Xvfb
-echo "🖥️  Starting virtual display..."
-/usr/bin/Xvfb :99 -screen 0 1366x768x24 -nolisten tcp &
-XVFB_PID=$!
-sleep 1
-
 # Start FlareSolverr
-echo "🚀 Starting FlareSolverr..."
+echo "🚀 Starting FlareSolverr (Headless)..."
 cd /root/EasyProxy/flaresolverr && PORT=8191 python3 src/flaresolverr.py &
 FLARE_PID=$!
 
@@ -218,7 +220,7 @@ cd /root/EasyProxy
 python3 -c "from app import app; from aiohttp import web; web.run_app(app, host='0.0.0.0', port=$PORT)"
 
 # Cleanup on exit
-kill $XVFB_PID $FLARE_PID $BYPARR_PID 2>/dev/null || true
+kill $FLARE_PID $BYPARR_PID 2>/dev/null || true
 LAUNCHER_EOF
 chmod +x "$PROOT_ROOTFS/easyproxy_start.sh"
 
@@ -233,26 +235,23 @@ LOCAL_IP=$(ip route get 1.1.1.1 2>/dev/null | awk '{print $7}')
 [ -z "$LOCAL_IP" ] && LOCAL_IP=$(ifconfig wlan0 2>/dev/null | grep "inet " | awk '{print $2}')
 [ -z "$LOCAL_IP" ] && LOCAL_IP="localhost"
 
-echo "🎬 Starting EasyProxy Full..."
+echo "🎬 Starting EasyProxy Full in background (Screen)..."
 echo "   Access (Local):   http://localhost:7860"
 echo "   Access (Network): http://${LOCAL_IP}:7860"
-echo "   Stop:             Ctrl+C"
+echo "   To view logs:     screen -r easyproxy"
+echo "   To stop:          easyproxy-stop"
 echo ""
-proot-distro login ubuntu -- bash /root/easyproxy_start.sh
+screen -dmS easyproxy proot-distro login ubuntu -- bash /root/easyproxy_start.sh
 CMD_EOF
 chmod +x "$PREFIX/bin/easyproxy"
 
-# Create update command
 cat > "$PREFIX/bin/easyproxy-update" << 'UPD_EOF'
 #!/data/data/com.termux/files/usr/bin/bash
-echo "🔄 Updating EasyProxy..."
-proot-distro login ubuntu -- bash -c '
-    source /root/ep_venv/bin/activate
-    cd /root/EasyProxy
-    git pull
-    pip install --no-cache-dir -r requirements.txt 2>&1 | tail -3
-    echo "✅ EasyProxy updated!"
-'
+echo "🔄 Running full EasyProxy system update..."
+easyproxy-stop 2>/dev/null || true
+curl -sL https://raw.githubusercontent.com/realbestia1/EasyProxy/main/termux_setup.sh | bash
+echo "✅ EasyProxy system updated successfully!"
+easyproxy
 UPD_EOF
 chmod +x "$PREFIX/bin/easyproxy-update"
 
@@ -261,9 +260,18 @@ cat > "$PREFIX/bin/easyproxy-stop" << 'STOP_EOF'
 #!/data/data/com.termux/files/usr/bin/bash
 echo "🛑 Stopping EasyProxy..."
 proot-distro login ubuntu -- bash -c 'pkill -f flaresolverr; pkill -f byparr; pkill -f "aiohttp\|gunicorn\|app:app"; pkill Xvfb' 2>/dev/null
+screen -X -S easyproxy quit 2>/dev/null || true
 echo "✅ Stopped."
 STOP_EOF
 chmod +x "$PREFIX/bin/easyproxy-stop"
+
+# Create logs command
+cat > "$PREFIX/bin/easyproxy-logs" << 'LOGS_EOF'
+#!/data/data/com.termux/files/usr/bin/bash
+echo "📖 Opening logs... (Press Ctrl+A then D to exit logs without stopping)"
+screen -r easyproxy
+LOGS_EOF
+chmod +x "$PREFIX/bin/easyproxy-logs"
 
 log "Launcher scripts created."
 
@@ -278,6 +286,7 @@ echo ""
 echo -e "  ${BLUE}Start:${NC}   easyproxy"
 echo -e "  ${BLUE}Update:${NC}  easyproxy-update"
 echo -e "  ${BLUE}Stop:${NC}    easyproxy-stop"
+echo -e "  ${BLUE}Logs:${NC}    easyproxy-logs"
 echo -e "  ${BLUE}Config:${NC}  Edit inside proot:"
 echo -e "           proot-distro login ubuntu"
 echo -e "           nano /root/EasyProxy/.env"
