@@ -2561,7 +2561,7 @@ class HLSProxy:
                 
                 # ✅ FIX LOG: Determine correct routing for display
                 if session_proxy:
-                    routing = f"WARP (Cloudflare IP)" if session_proxy == WARP_PROXY_URL else f"PROXY ({session_proxy})"
+                    routing = f"WARP (Cloudflare IP)" if (WARP_PROXY_URL and session_proxy == WARP_PROXY_URL) else f"PROXY ({session_proxy})"
                 else:
                     routing = "BYPASS (Real IP)"
                 
@@ -2570,7 +2570,15 @@ class HLSProxy:
                 )
 
             # --- PROTECTED DOMAINS FALLBACK: curl_cffi ---
-            if HAS_CURL_CFFI and (not is_cccdn_stream) and any(d in stream_url for d in ["cinemacity.cc", "torrentio", "strem.fun"]):
+            use_curl_cffi = HAS_CURL_CFFI and (not is_cccdn_stream) and any(d in stream_url for d in ["cinemacity.cc", "torrentio", "strem.fun"])
+            
+            if use_curl_cffi and any(d in stream_url for d in ["torrentio", "strem.fun"]):
+                # Only use curl_cffi for Torrentio if it's a manifest or explicitly requested
+                is_manifest_req = any(ext in stream_url.lower() for ext in [".m3u8", ".mpd", "manifest"])
+                if not is_manifest_req:
+                    use_curl_cffi = False
+
+            if use_curl_cffi:
                 logger.info(f"🚀 [curl_cffi] Using browser impersonation for: {stream_url}")
                 try:
                     # Use a pooled curl session if available
@@ -2666,7 +2674,10 @@ class HLSProxy:
                         async def __aexit__(self, exc_type, exc_val, exc_tb): pass
 
                     # Se curl_cffi fallisce con 403 su un manifest, proviamo FlareSolverr via smart_request
-                    if curl_resp.status_code == 403 and is_manifest:
+                    if curl_resp.status_code in [502, 503, 504]:
+                        logger.warning(f"⚠️ [curl_cffi] {curl_resp.status_code} error for {final_curl_url[:50]}, falling back to standard aiohttp...")
+                        goto_manifest_processing = False
+                    elif curl_resp.status_code == 403 and is_manifest:
                         logger.warning(f"⚠️ [curl_cffi] 403 on manifest, trying smart_request fallback for {final_curl_url[:50]}...")
                         from utils.smart_request import smart_request
                         sr_result = await smart_request("request.get", final_curl_url, headers=curl_headers)
@@ -2730,7 +2741,7 @@ class HLSProxy:
                                 headers=retry_headers,
                             )
                     error_body = await resp.read()
-                    routing = "WARP" if session_proxy == WARP_PROXY_URL else ("BYPASS" if session_proxy is None else "PROXY")
+                    routing = "WARP" if (session_proxy and WARP_PROXY_URL and session_proxy == WARP_PROXY_URL) else ("BYPASS" if session_proxy is None else "PROXY")
                     logger.warning(f"⚠️ Upstream returned error {resp.status} for {stream_url} [Routing: {routing}]")
                     return web.Response(body=error_body, status=resp.status, headers={"Content-Type": content_type, "Access-Control-Allow-Origin": "*"})
 
