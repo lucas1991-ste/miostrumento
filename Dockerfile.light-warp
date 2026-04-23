@@ -52,9 +52,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 3. Codice applicazione
 COPY . .
 
-# Fix Python package structure (come in Dockerfile.full e Dockerfile-hf)
-RUN touch __init__.py services/__init__.py extractors/__init__.py utils/__init__.py routes/__init__.py
-
 # 4. Entrypoint script
 # Necessario perché WARP richiede una sequenza di inizializzazione
 # con logica condizionale (attesa, retry, registrazione, connessione)

@@ -37,7 +37,7 @@ if [ "$ENABLE_WARP" = "true" ]; then
         fi
 
         # Esclusioni domini che bloccano WARP o richiedono IP reale
-        # Allineato con config.py WARP_EXCLUDE_DOMAINS (v2.5.40)
+        # Allineato con config.py WARP_EXCLUDE_DOMAINS (v2.5.71)
         # Fallback: prova sia il comando nuovo (v2024+) sia quello vecchio
         for domain in cinemacity.cc cccdn.net vavoo.to vavoo.tv lokke.app mediahubmx.cc strem.fun real-debrid.com realdebrid.com api.real-debrid.com premiumize.me www.premiumize.me alldebrid.com api.alldebrid.com debrid-link.com debridlink.com api.debrid-link.com torbox.app api.torbox.app offcloud.com api.offcloud.com put.io api.put.io; do
             (warp-cli --accept-tos tunnel host add $domain > /dev/null 2>&1 || \
