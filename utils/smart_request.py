@@ -2,7 +2,7 @@ import aiohttp
 import logging
 import asyncio
 from typing import Optional, Dict, Any
-from config import FLARESOLVERR_URL, FLARESOLVERR_TIMEOUT, get_proxy_for_url, TRANSPORT_ROUTES, GLOBAL_PROXIES, get_connector_for_proxy
+from config import FLARESOLVERR_URL, FLARESOLVERR_TIMEOUT, get_proxy_for_url, TRANSPORT_ROUTES, GLOBAL_PROXIES, get_connector_for_proxy, get_solver_proxy_url
 from aiohttp_socks import ProxyConnector
 import yarl
 
@@ -115,11 +115,7 @@ async def smart_request(cmd: str, url: str, headers: Optional[Dict] = None, post
     if post_data: payload["postData"] = post_data
     if proxy:
         payload["proxy"] = {"url": proxy}
-        # Support Byparr specific implementation (headers instead of JSON)
-        clean_proxy = proxy
-        if clean_proxy.startswith("socks5h://"):
-            clean_proxy = clean_proxy.replace("socks5h://", "socks5://")
-        headers_for_fs = {"X-Proxy-Server": clean_proxy}
+        headers_for_fs = {"X-Proxy-Server": get_solver_proxy_url(proxy)}
     else:
         headers_for_fs = {}
 

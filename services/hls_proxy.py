@@ -588,7 +588,7 @@ class HLSProxy:
         # Patterns for domains that usually block Cloudflare/WARP
         # Cinemacity, VixSrc, etc.
         bypass_patterns = [
-            "cccdn.net", "cinemacity.cc"
+            "cccdn.net", "cinemacity.cc", "strem.fun", "torrentio.strem.fun"
         ]
         
         try:
@@ -1345,6 +1345,7 @@ class HLSProxy:
                         "icy-metadata",
                         "accept-encoding",
                         "content-length",
+                        "x-easyproxy-disable-ssl",
                     }:
                         continue
                     stream_headers[header_name] = header_value
@@ -1368,15 +1369,13 @@ class HLSProxy:
                 stream_url = result["destination_url"]
                 stream_headers = result.get("request_headers", {})
                 captured_manifest = result.get("captured_manifest")
-                warp_bypass = result.get("warp_bypass", False)
+                force_disable_ssl = result.get("disable_ssl", False)
 
-                # Se l'estrattore richiede il bypass di WARP, aggiungiamo il flag all'URL
-                if warp_bypass:
+                if force_disable_ssl:
                     if "?" in stream_url:
-                        stream_url += "&direct=1"
+                        stream_url += "&disable_ssl=1"
                     else:
-                        stream_url += "?direct=1"
-                    logger.info(f"⚡ WARP Bypass forced for this stream: {stream_url[:50]}...")
+                        stream_url += "?disable_ssl=1"
 
 
             # Se redirect_stream è False, restituisci il JSON con i dettagli (stile MediaFlow)
@@ -1900,6 +1899,7 @@ class HLSProxy:
             stream_url = result["destination_url"]
             stream_headers = result.get("request_headers", {})
             mediaflow_endpoint = result.get("mediaflow_endpoint", "hls_proxy")
+            force_disable_ssl = result.get("disable_ssl", False)
 
             logger.info(
                 f"✅ Extraction success: {stream_url[:50]}... Endpoint: {mediaflow_endpoint}"
@@ -1934,6 +1934,9 @@ class HLSProxy:
             api_password = request.query.get("api_password")
             if api_password:
                 header_params += f"&api_password={api_password}"
+
+            if force_disable_ssl:
+                header_params += "&disable_ssl=1"
 
             # 1. URL COMPLETO (Solo per il redirect)
             full_proxy_url = f"{proxy_base}{endpoint}?d={encoded_url}{header_params}"
@@ -2523,7 +2526,14 @@ class HLSProxy:
             # logger.info(f"   Final Stream Headers: {headers}")
 
             # ✅ NUOVO: Determina se disabilitare SSL per questo dominio
-            disable_ssl = get_ssl_setting_for_url(stream_url, TRANSPORT_ROUTES)
+            disable_ssl = (
+                request.query.get("h_X-EasyProxy-Disable-SSL") == "1"
+                or request.query.get("disable_ssl") == "1"
+                or headers.get("X-EasyProxy-Disable-SSL") == "1"
+                or get_ssl_setting_for_url(stream_url, TRANSPORT_ROUTES)
+            )
+            headers.pop("X-EasyProxy-Disable-SSL", None)
+            headers.pop("x-easyproxy-disable-ssl", None)
             is_cccdn_stream = "cccdn.net" in stream_url
 
             if is_cccdn_stream:
@@ -2551,7 +2561,7 @@ class HLSProxy:
                 
                 # ✅ FIX LOG: Determine correct routing for display
                 if session_proxy:
-                    routing = f"WARP (Cloudflare IP)" if session_proxy == WARP_PROXY_URL else f"PROXY ({session_proxy})"
+                    routing = f"WARP (Cloudflare IP)" if (WARP_PROXY_URL and session_proxy == WARP_PROXY_URL) else f"PROXY ({session_proxy})"
                 else:
                     routing = "BYPASS (Real IP)"
                 
@@ -2560,7 +2570,15 @@ class HLSProxy:
                 )
 
             # --- PROTECTED DOMAINS FALLBACK: curl_cffi ---
-            if HAS_CURL_CFFI and (not is_cccdn_stream) and any(d in stream_url for d in ["cinemacity.cc", "torrentio", "strem.fun"]):
+            use_curl_cffi = HAS_CURL_CFFI and (not is_cccdn_stream) and any(d in stream_url for d in ["cinemacity.cc", "torrentio", "strem.fun"])
+            
+            if use_curl_cffi and any(d in stream_url for d in ["torrentio", "strem.fun"]):
+                # Only use curl_cffi for Torrentio if it's a manifest or explicitly requested
+                is_manifest_req = any(ext in stream_url.lower() for ext in [".m3u8", ".mpd", "manifest"])
+                if not is_manifest_req:
+                    use_curl_cffi = False
+
+            if use_curl_cffi:
                 logger.info(f"🚀 [curl_cffi] Using browser impersonation for: {stream_url}")
                 try:
                     # Use a pooled curl session if available
@@ -2656,7 +2674,10 @@ class HLSProxy:
                         async def __aexit__(self, exc_type, exc_val, exc_tb): pass
 
                     # Se curl_cffi fallisce con 403 su un manifest, proviamo FlareSolverr via smart_request
-                    if curl_resp.status_code == 403 and is_manifest:
+                    if curl_resp.status_code in [502, 503, 504]:
+                        logger.warning(f"⚠️ [curl_cffi] {curl_resp.status_code} error for {final_curl_url[:50]}, falling back to standard aiohttp...")
+                        goto_manifest_processing = False
+                    elif curl_resp.status_code == 403 and is_manifest:
                         logger.warning(f"⚠️ [curl_cffi] 403 on manifest, trying smart_request fallback for {final_curl_url[:50]}...")
                         from utils.smart_request import smart_request
                         sr_result = await smart_request("request.get", final_curl_url, headers=curl_headers)
@@ -2720,7 +2741,7 @@ class HLSProxy:
                                 headers=retry_headers,
                             )
                     error_body = await resp.read()
-                    routing = "WARP" if session_proxy == WARP_PROXY_URL else ("BYPASS" if session_proxy is None else "PROXY")
+                    routing = "WARP" if (session_proxy and WARP_PROXY_URL and session_proxy == WARP_PROXY_URL) else ("BYPASS" if session_proxy is None else "PROXY")
                     logger.warning(f"⚠️ Upstream returned error {resp.status} for {stream_url} [Routing: {routing}]")
                     return web.Response(body=error_body, status=resp.status, headers={"Content-Type": content_type, "Access-Control-Allow-Origin": "*"})
 

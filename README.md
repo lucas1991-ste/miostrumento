@@ -105,6 +105,7 @@ Configure the server via a `.env` file. See `.env.example` for all options.
 | `BYPARR_URL` | URL for Byparr (Not needed in Full version) | `http://localhost:8192` |
 | `DVR_ENABLED` | Enable recording features | `false` |
 | `ENABLE_WARP` | Enable integrated Cloudflare WARP (Full version only) | `false` |
+| `WARP_EXCLUDED_HOSTS` | Comma-separated hosts that must bypass the WARP VPN tunnel and use the server real IP | built-in defaults |
 | `WARP_LICENSE_KEY` | Optional WARP+ license key | - |
 
 ### 🛡️ Cloudflare WARP Integration
@@ -128,8 +129,11 @@ docker run -d --name easyproxy --cap-add=NET_ADMIN --device /dev/net/tun -e ENAB
 > [!NOTE]
 > If you are deploying on **HuggingFace Spaces**, WARP cannot be used due to security restrictions. Set `ENABLE_WARP=false` in your environment variables.
 
-> [!TIP]
-> **Automatic Bypass (Vavoo):** Streams from Vavoo and other problematic providers automatically use the `&direct=1` flag to bypass WARP, ensuring they always use the VPS real IP for maximum stability.
+> [!IMPORTANT]
+> If a provider has issues behind WARP, configure the host in `WARP_EXCLUDED_HOSTS`.
+> With WARP running as a VPN tunnel, bypass must be configured through the `WARP_EXCLUDED_HOSTS` environment variable so the host exits with the server real IP.
+> Example:
+> `WARP_EXCLUDED_HOSTS=cinemacity.cc,cccdn.net,strem.fun,torrentio.strem.fun,problem-host.example`
 
 ---
 
@@ -146,8 +150,6 @@ http://localhost:7860/proxy/manifest.m3u8?url=<URL>
 **Options:**
 - `&clearkey=KID:KEY`: Provide keys for DASH streams.
 - `&h_<Header Name>=<Value>`: Pass custom headers (e.g., `&h_User-Agent=VLC`).
-- `&direct=1` (or `&warp=off`): Force a direct connection, bypassing WARP for this specific stream.  
-  *Example:* `http://localhost:7860/proxy/manifest.m3u8?url=http://example.com/video.m3u8&direct=1`
 
 ### 🔍 Stream Extractor
 Extract direct video links from supported websites.
