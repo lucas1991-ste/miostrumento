@@ -129,6 +129,8 @@ proot-distro login $DISTRO_NAME -- bash -c '
         git clone https://github.com/FlareSolverr/FlareSolverr.git "$EP_DIR/flaresolverr"
     fi
     cd "$EP_DIR/flaresolverr"
+    # Reset utils.py to original state before patching (handles re-runs)
+    git checkout -- src/utils.py 2>/dev/null || true
     sed -i "s|options.add_argument('--no-sandbox')|options.add_argument('--no-sandbox'); options.add_argument('--disable-dev-shm-usage'); options.add_argument('--disable-gpu'); options.add_argument('--headless=new')|" src/utils.py 2>/dev/null || true
     sed -i "s|^\([[:space:]]*\)start_xvfb_display()|\1pass|g" src/utils.py 2>/dev/null || true
     sed -i "s|driver_executable_path=driver_exe_path|driver_executable_path=\"/usr/bin/chromedriver\"|" src/utils.py 2>/dev/null || true
