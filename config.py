@@ -293,7 +293,7 @@ MAX_RECORDING_DURATION = int(os.environ.get("MAX_RECORDING_DURATION", 28800))
 RECORDINGS_RETENTION_DAYS = int(os.environ.get("RECORDINGS_RETENTION_DAYS", 7))
 
 # --- Version/Mode Configuration ---
-APP_VERSION = "2.5.84"
+APP_VERSION = "2.5.85"
 
 _has_solvers = os.path.exists("flaresolverr") and (
     os.path.exists("byparr") or os.path.exists("byparr_src")
