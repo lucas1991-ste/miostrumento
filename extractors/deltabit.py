@@ -300,17 +300,20 @@ class DeltabitExtractor:
                     if not next_url:
                         for a_tag in soup.find_all("a", href=re.compile(r'deltabit\.(co|sx|bz)/[a-zA-Z0-9]+', re.I)):
                             href = a_tag["href"]
-                            # Escludi pagine statiche
-                            if not any(x in href.lower() for x in ["/login", "/registration", "/faq", "/tos", "/contact", "/category", "deltabit.co/ ", "deltabit.co/\""]):
-                                if len(href.split("/")[-1]) > 5: # Un ID video è solitamente lungo
+                            # Escludi pagine statiche e stringhe troppo corte (un ID video è solitamente > 10 chars)
+                            path_part = href.split("/")[-1].split(".")[0]
+                            if not any(x in href.lower() for x in ["/login", "/registration", "/faq", "/tos", "/contact", "/category", "make_money"]):
+                                if len(path_part) >= 10: 
                                     next_url = href
                                     break
 
                     if next_url:
                         if next_url.startswith("/"):
                             next_url = urljoin(current_url, next_url)
+                        
                         # Se abbiamo trovato un link valido a deltabit con ID, usciamo dal loop dei redirector
-                        if "deltabit" in next_url.lower() and len(next_url.split("/")[-1]) > 5:
+                        path_part = next_url.split("/")[-1].split(".")[0]
+                        if "deltabit" in next_url.lower() and len(path_part) >= 10:
                             current_url = next_url
                             return current_url
                         current_url = next_url
