@@ -57,14 +57,17 @@ class DeltabitExtractor:
     Supports safego.cc/clicka.cc redirection and unifies FlareSolverr sessions for speed.
     """
 
-    def __init__(self, request_headers: dict = None, proxies: list = None):
+    def __init__(self, request_headers: dict = None, proxies: list = None, bypass_warp: bool = False):
         self.request_headers = request_headers or {}
         self.base_headers = self.request_headers.copy()
-        self.base_headers.setdefault("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36")
-        self.proxies = proxies or []
-        self.mediaflow_endpoint = "proxy_stream_endpoint"
+        if "User-Agent" not in self.base_headers and "user-agent" not in self.base_headers:
+             self.base_headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        
+        self.proxies = proxies or GLOBAL_PROXIES
         self.cache = CookieCache("deltabit")
-        self.bypass_warp_active = False
+        self.mediaflow_endpoint = "proxy_stream_endpoint"
+        self.bypass_warp_active = bypass_warp
+
 
     async def _request_flaresolverr(self, cmd: str, url: str = None, post_data: str = None, session_id: str = None) -> dict:
         """Performs a request via FlareSolverr."""
@@ -112,14 +115,13 @@ class DeltabitExtractor:
 
     async def extract(self, url: str, **kwargs) -> dict:
         """Extract Deltabit URL using a unified FlareSolverr session if needed."""
+        # Respect bypass_warp from kwargs if provided
+        if "bypass_warp" in kwargs:
+            self.bypass_warp_active = kwargs["bypass_warp"]
         
         # 1. Handle redirectors (safego.cc, clicka.cc, etc.)
         if any(d in url.lower() for d in ["safego.cc", "clicka.cc", "clicka"]):
             url = await self._solve_redirector(url)
-            # Una volta risolto il redirector, passiamo a warp=off per Deltabit
-            self.bypass_warp_active = True
-            logger.debug("🔄 Redirector solved, switching to warp=off for Deltabit")
-
         # 2. Normalize URL to embed format
         # Normalize URL (only base domains, no forced /e/)
         if "deltabit.co" in url.lower():

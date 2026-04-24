@@ -866,7 +866,7 @@ class HLSProxy:
                 elif host == "deltabit":
                     if key not in self.extractors:
                         self.extractors[key] = DeltabitExtractor(
-                            request_headers, proxies=GLOBAL_PROXIES
+                            request_headers, proxies=GLOBAL_PROXIES, bypass_warp=bypass_warp
                         )
                     return self.extractors[key]
                 elif host == "streamhg":
