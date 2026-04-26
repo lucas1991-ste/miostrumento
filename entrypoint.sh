@@ -86,5 +86,5 @@ cd /app/flaresolverr && eval $PROXY_VARS PORT=8191 python3 src/flaresolverr.py &
 
 echo "Starting EasyProxy..."
 cd /app
-WORKERS_COUNT=${WORKERS:-$(nproc 2>/dev/null || echo 1)}
+WORKERS_COUNT=${WORKERS:-1}
 gunicorn --bind 0.0.0.0:${PORT:-7860} --workers $WORKERS_COUNT --worker-class aiohttp.worker.GunicornWebWorker --timeout 120 --graceful-timeout 120 app:app

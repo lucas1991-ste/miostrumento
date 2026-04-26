@@ -13,3 +13,4 @@ ddddocr
 Pillow
 curl_cffi
 cloudscraper
+brotli

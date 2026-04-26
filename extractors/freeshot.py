@@ -71,6 +71,7 @@ class FreeshotExtractor:
                     try:
                         logger.debug(f"FreeshotExtractor: Uso FlareSolverr per estrarre codice da {url}")
                         content = await smart_request("request.get", url, headers=self.base_headers, proxies=self.proxies)
+                        content = content["html"] if isinstance(content, dict) and content.get("html") else content
                     except Exception as e:
                         logger.warning(f"FreeshotExtractor: FlareSolverr fallito per freeshot.live: {e}")
                 
@@ -145,6 +146,7 @@ class FreeshotExtractor:
         
         # Token extraction (no need for try-except wrapper since ExtractorError propagates)
         # Nuova estrazione token via currentToken
+        body = body["html"] if isinstance(body, dict) and body.get("html") else body
         match = re.search(r'streamUrl\s*:\s*"([^"]+)"', body)
         if not match:
             # Fallback al vecchio metodo iframe

@@ -15,7 +15,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     ffmpeg \
     chromium \
-    nodejs \
     libnss3 \
     libatk1.0-0 \
     libatk-bridge2.0-0 \
@@ -63,7 +62,8 @@ RUN git init . \
 # Installiamo le dipendenze dal file requirements del progetto
 RUN pip install --no-cache-dir -r requirements.txt
 
-RUN python -m playwright install chromium
+# Playwright uses system Chromium (/usr/bin/chromium)
+
 RUN chmod +x entrypoint.sh
 
 # 6. Execution

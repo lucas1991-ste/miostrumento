@@ -1,21 +1,11 @@
 import logging
-import random
 import re
-from urllib.parse import urljoin
-from aiohttp import ClientSession, ClientTimeout, TCPConnector
-try:
-    from aiohttp_socks import ProxyConnector
-except ImportError:
-    ProxyConnector = None
-
-from config import get_proxy_for_url, TRANSPORT_ROUTES, get_connector_for_proxy
+from urllib.parse import urljoin, urlparse
+from extractors.base import BaseExtractor, ExtractorError
 
 logger = logging.getLogger(__name__)
 
-class ExtractorError(Exception):
-    pass
-
-class UqloadExtractor:
+class UqloadExtractor(BaseExtractor):
     """Uqload URL extractor."""
 
     # Full browser-like headers required to bypass Cloudflare/bot checks on uqload
@@ -50,54 +40,16 @@ class UqloadExtractor:
     ]
 
     def __init__(self, request_headers: dict, proxies: list = None):
-        self.request_headers = request_headers
-        self.base_headers = {
-            "user-agent": self.BROWSER_HEADERS["User-Agent"]
-        }
-        self.session = None
+        super().__init__(request_headers, proxies, extractor_name="uqload")
         self.mediaflow_endpoint = "proxy_stream_endpoint"
-        self.proxies = proxies or []
-
-    def _get_random_proxy(self):
-        return random.choice(self.proxies) if self.proxies else None
-
-    async def _get_session(self, url: str = None):
-        if self.session is None or self.session.closed:
-            timeout = ClientTimeout(total=60, connect=30, sock_read=30)
-            proxy = get_proxy_for_url(url, TRANSPORT_ROUTES, self.proxies) if url else self._get_random_proxy()
-            if proxy:
-                connector = get_connector_for_proxy(proxy)
-            else:
-                connector = TCPConnector(
-                    limit=0, limit_per_host=0,
-                    keepalive_timeout=60,
-                    enable_cleanup_closed=True,
-                    force_close=False,
-                    use_dns_cache=True,
-                )
-            self.session = ClientSession(
-                timeout=timeout,
-                connector=connector,
-            )
-        return self.session
 
     async def extract(self, url: str, **kwargs) -> dict:
-        """Extract Uqload video URL.
-
-        Sends full browser headers to avoid Cloudflare/bot-protection blocks
-        and tries multiple regex patterns for resilience across uqload domains
-        (.io / .is / .com / .to).
-        """
-        session = await self._get_session(url)
+        """Extract Uqload video URL."""
         logger.debug(f"[Uqload] Fetching embed page: {url}")
 
-        async with session.get(url, headers=self.BROWSER_HEADERS, allow_redirects=True) as response:
-            final_url = str(response.url)
-            if response.status not in (200, 206):
-                raise ExtractorError(
-                    f"Uqload page returned HTTP {response.status} for {url}"
-                )
-            text = await response.text(errors="replace")
+        resp = await self._make_request(url, headers=self.BROWSER_HEADERS)
+        text = resp.text
+        final_url = resp.url
 
         logger.debug(f"[Uqload] Page length: {len(text)} chars, final URL: {final_url}")
 

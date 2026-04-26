@@ -1,57 +1,17 @@
 import logging
-import random
 import re
 from urllib.parse import urljoin, urlparse
-
-from aiohttp import ClientSession, ClientTimeout, TCPConnector
-from aiohttp_socks import ProxyConnector
-from config import get_proxy_for_url, TRANSPORT_ROUTES, get_connector_for_proxy
-
+from extractors.base import BaseExtractor, ExtractorError
 from utils.packed import unpack
 
 logger = logging.getLogger(__name__)
 
-
-class ExtractorError(Exception):
-    pass
-
-
-class StreamHGExtractor:
+class StreamHGExtractor(BaseExtractor):
     """Extractor for StreamHG-style players (dhcplay/vibuxer mirrors)."""
 
     def __init__(self, request_headers: dict, proxies: list = None):
-        self.request_headers = request_headers
-        self.base_headers = {
-            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-        }
-        self.session = None
+        super().__init__(request_headers, proxies, extractor_name="streamhg")
         self.mediaflow_endpoint = "hls_proxy"
-        self.proxies = proxies or []
-
-    def _get_random_proxy(self):
-        return random.choice(self.proxies) if self.proxies else None
-
-    async def _get_session(self, url: str = None):
-        if self.session is None or self.session.closed:
-            timeout = ClientTimeout(total=60, connect=30, sock_read=30)
-            proxy = get_proxy_for_url(url, TRANSPORT_ROUTES, self.proxies) if url else self._get_random_proxy()
-            if proxy:
-                connector = get_connector_for_proxy(proxy)
-            else:
-                connector = TCPConnector(
-                    limit=0,
-                    limit_per_host=0,
-                    keepalive_timeout=60,
-                    enable_cleanup_closed=True,
-                    force_close=False,
-                    use_dns_cache=True,
-                )
-            self.session = ClientSession(
-                timeout=timeout,
-                connector=connector,
-                headers={"User-Agent": self.base_headers["user-agent"]},
-            )
-        return self.session
 
     @staticmethod
     def _candidate_urls(url: str) -> list[str]:
@@ -66,15 +26,12 @@ class StreamHGExtractor:
         return candidates
 
     async def _fetch_html(self, url: str, referer: str) -> tuple[str, str]:
-        session = await self._get_session(url)
         headers = {
             "Referer": referer,
-            "User-Agent": self.base_headers["user-agent"],
+            "User-Agent": self.base_headers["User-Agent"],
         }
-        async with session.get(url, headers=headers, allow_redirects=True) as response:
-            if response.status != 200:
-                raise ExtractorError(f"STREAMHG: HTTP {response.status} for {url}")
-            return str(response.url), await response.text()
+        resp = await self._make_request(url, headers=headers)
+        return resp.url, resp.text
 
     @staticmethod
     def _extract_hls_url(html: str, page_url: str) -> str | None:

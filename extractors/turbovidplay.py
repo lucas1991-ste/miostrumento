@@ -1,17 +1,8 @@
-import logging
-import random
 import re
 from urllib.parse import urljoin, urlparse
-from aiohttp import ClientSession, ClientTimeout, TCPConnector
-from aiohttp_socks import ProxyConnector
-from config import get_proxy_for_url, TRANSPORT_ROUTES, get_connector_for_proxy
+from extractors.base import BaseExtractor, ExtractorError
 
-logger = logging.getLogger(__name__)
-
-class ExtractorError(Exception):
-    pass
-
-class TurboVidPlayExtractor:
+class TurboVidPlayExtractor(BaseExtractor):
     """TurboVidPlay URL extractor."""
 
     domains = [
@@ -24,27 +15,7 @@ class TurboVidPlayExtractor:
     ]
 
     def __init__(self, request_headers: dict, proxies: list = None):
-        self.request_headers = request_headers
-        self.base_headers = {
-            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        }
-        self.session = None
-        self.mediaflow_endpoint = "hls_proxy"
-        self.proxies = proxies or []
-
-    def _get_random_proxy(self):
-        return random.choice(self.proxies) if self.proxies else None
-
-    async def _get_session(self, url: str = None):
-        if self.session is None or self.session.closed:
-            timeout = ClientTimeout(total=60, connect=30, sock_read=30)
-            proxy = get_proxy_for_url(url, TRANSPORT_ROUTES, self.proxies) if url else self._get_random_proxy()
-            if proxy:
-                connector = get_connector_for_proxy(proxy)
-            else:
-                connector = TCPConnector(limit=0, limit_per_host=0, keepalive_timeout=60, enable_cleanup_closed=True, force_close=False, use_dns_cache=True)
-            self.session = ClientSession(timeout=timeout, connector=connector, headers={'User-Agent': self.base_headers["user-agent"]})
-        return self.session
+        super().__init__(request_headers, proxies, extractor_name="turbovidplay")
 
     def _get_origin(self, url: str) -> str:
         """Get origin from URL."""
@@ -74,12 +45,10 @@ class TurboVidPlayExtractor:
 
     async def extract(self, url: str, **kwargs) -> dict:
         """Extract TurboVidPlay URL."""
-        session = await self._get_session(url)
-        
         # 1. Load embed
-        async with session.get(url) as response:
-            html = await response.text()
-            response_url = str(response.url)
+        resp = await self._make_request(url)
+        html = resp.text
+        response_url = resp.url
 
         # 2. Extract urlPlay or data-hash
         m = re.search(r"(?:urlPlay|data-hash)\s*=\s*['\"]([^'\"]+)", html)
@@ -96,9 +65,9 @@ class TurboVidPlayExtractor:
             media_url = origin + media_url
 
         # 3. Fetch the intermediate playlist
-        async with session.get(media_url, headers={"Referer": url}) as data_resp:
-            playlist = await data_resp.text()
-            playlist_url = str(data_resp.url)
+        resp_data = await self._make_request(media_url, headers={"Referer": url})
+        playlist = resp_data.text
+        playlist_url = resp_data.url
 
         # 4. Extract real m3u8 URL
         real_m3u8 = self._extract_playlist_url(playlist, playlist_url)

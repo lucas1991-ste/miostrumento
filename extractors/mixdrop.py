@@ -1,217 +1,188 @@
-import logging
-import random
-import re
-import base64
 import asyncio
+import logging
+import re
+import time
+import base64
+import os
 from urllib.parse import urlparse, urljoin, urlencode
 
 import aiohttp
-from aiohttp import ClientSession, ClientTimeout, TCPConnector
-from aiohttp_socks import ProxyConnector
+from bs4 import BeautifulSoup, SoupStrainer
 
-from config import FLARESOLVERR_URL, FLARESOLVERR_TIMEOUT, get_proxy_for_url, TRANSPORT_ROUTES, GLOBAL_PROXIES, get_connector_for_proxy, get_solver_proxy_url
-from utils.packed import eval_solver
-from bs4 import BeautifulSoup
+from config import FLARESOLVERR_URL, FLARESOLVERR_TIMEOUT, get_proxy_for_url, TRANSPORT_ROUTES, get_solver_proxy_url, GLOBAL_PROXIES, FLARESOLVERR_WARM_SESSIONS
+from utils.cookie_cache import CookieCache
+from utils.solver_manager import solver_manager
 
 logger = logging.getLogger(__name__)
 
 class ExtractorError(Exception):
     pass
 
+class Settings:
+    flaresolverr_url = FLARESOLVERR_URL
+    flaresolverr_timeout = FLARESOLVERR_TIMEOUT
+
+settings = Settings()
+
 class MixdropExtractor:
-    """Mixdrop URL extractor optimized with FlareSolverr sessions."""
-
-    def __init__(self, request_headers: dict, proxies: list = None):
-        self.request_headers = request_headers
-        self.base_headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-        }
-        self.session = None
-        self.mediaflow_endpoint = "proxy_stream_endpoint"
+    def __init__(self, request_headers: dict = None, proxies: list = None, bypass_warp: bool = False):
+        self.request_headers = request_headers or {}
+        self.base_headers = self.request_headers.copy()
+        if "User-Agent" not in self.base_headers and "user-agent" not in self.base_headers:
+             self.base_headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         self.proxies = proxies or GLOBAL_PROXIES
+        self.cookie_cache = CookieCache("universal")
+        self.mediaflow_endpoint = "proxy_stream_endpoint"
+        self.bypass_warp_active = bypass_warp
+        self.session = None
 
-    async def _get_session(self, url: str = None):
+    async def _get_session(self) -> aiohttp.ClientSession:
         if self.session is None or self.session.closed:
-            timeout = ClientTimeout(total=60, connect=30, sock_read=30)
-            proxy = get_proxy_for_url(url, TRANSPORT_ROUTES, self.proxies) if url else None
-            connector = get_connector_for_proxy(proxy) if proxy else TCPConnector(limit=0, use_dns_cache=True)
-            self.session = ClientSession(timeout=timeout, connector=connector, headers=self.base_headers)
+            self.session = aiohttp.ClientSession(headers=self.base_headers)
         return self.session
 
-    async def _request_flaresolverr(self, cmd: str, url: str = None, post_data: str = None, session_id: str = None) -> dict:
-        """Performs a request via FlareSolverr."""
-        if not FLARESOLVERR_URL:
-             return None
-
-        endpoint = f"{FLARESOLVERR_URL.rstrip('/')}/v1"
-        payload = {
-            "cmd": cmd,
-            "maxTimeout": (FLARESOLVERR_TIMEOUT + 60) * 1000,
-        }
+    async def _request_flaresolverr(self, cmd: str, url: str = None, post_data: str = None, session_id: str = None, wait: int = 0) -> dict:
+        endpoint = f"{settings.flaresolverr_url.rstrip('/')}/v1"
+        payload = {"cmd": cmd, "maxTimeout": (settings.flaresolverr_timeout + 60) * 1000}
+        if wait > 0: payload["wait"] = wait
         fs_headers = {}
         if url: 
             payload["url"] = url
-            # Determina dinamicamente il proxy per questo specifico URL
-            proxy = get_proxy_for_url(url, TRANSPORT_ROUTES, self.proxies)
+            proxy = get_proxy_for_url(url, TRANSPORT_ROUTES, self.proxies, bypass_warp=self.bypass_warp_active)
             if proxy:
                 payload["proxy"] = {"url": proxy}
-                solver_proxy = get_solver_proxy_url(proxy)
-                fs_headers["X-Proxy-Server"] = solver_proxy
-                logger.debug(f"Mixdrop: Passing explicit proxy to solver: {solver_proxy}")
-
+                fs_headers["X-Proxy-Server"] = get_solver_proxy_url(proxy)
         if post_data: payload["postData"] = post_data
         if session_id: payload["session"] = session_id
-
         async with aiohttp.ClientSession() as fs_session:
-            try:
-                async with fs_session.post(
-                    endpoint,
-                    json=payload,
-                    headers=fs_headers,
-                    timeout=aiohttp.ClientTimeout(total=FLARESOLVERR_TIMEOUT + 95),
-                ) as resp:
-                    if resp.status != 200:
-                        return None
-                    data = await resp.json()
-            except Exception:
-                return None
-
-        if data.get("status") != "ok":
-            return None
-        
+            async with fs_session.post(endpoint, json=payload, headers=fs_headers, timeout=settings.flaresolverr_timeout + 95) as resp:
+                data = await resp.json()
+        if data.get("status") != "ok": raise ExtractorError(f"FlareSolverr: {data.get('message')}")
         return data
 
+    def _unpack(self, packed_js: str) -> str:
+        try:
+            match = re.search(r'}\(\'(.*)\',(\d+),(\d+),\'(.*)\'\.split\(\'\|\'\)', packed_js)
+            if not match: return packed_js
+            p, a, c, k = match.groups()
+            a, c, k = int(a), int(c), k.split('|')
+            def e(c):
+                res = ""
+                if c >= a: res = e(c // a)
+                return res + "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"[c % a]
+            d = {e(i): (k[i] if k[i] else e(i)) for i in range(c)}
+            return re.sub(r'\b(\w+)\b', lambda m: d.get(m.group(1), m.group(1)), p)
+        except Exception: return packed_js
+
     async def extract(self, url: str, **kwargs) -> dict:
-        """Extract Mixdrop URL."""
-        # 1. Handle redirectors (safego.cc, clicka.cc, etc.)
-        if any(domain in url.lower() for domain in ["safego.cc", "clicka.cc", "clicka"]):
-            url = await self._solve_redirector(url)
-
-        # 2. Normalize
-        if "/f/" in url: url = url.replace("/f/", "/e/")
-        if "/emb/" in url: url = url.replace("/emb/", "/e/")
-        
-        known_mirrors = ["mixdrop.to", "m1xdrop.net", "mixdrop.bz", "mixdrop.si", 
-                         "mixdrop.ag", "mixdrop.top", "mixdrop.sx", "mdy48tn97.com"]
-        
-        mirror_found = False
-        for mirror in known_mirrors:
-            if mirror in url:
-                mirror_found = True
-                break
-        
-        if not mirror_found and "mixdrop" in url:
-            parts = url.split("/")
-            if len(parts) > 2:
-                parts[2] = "mixdrop.to"
-                url = "/".join(parts)
-
-        # Mixdrop extraction usually doesn't need FlareSolverr sessions for eval_solver
-        # but we use standard aiohttp for the final packed JS extraction.
-        headers = {"accept-language": "en-US,en;q=0.5", "referer": url}
-        
-        patterns = [
-            r'MDCore.wurl ?= ?\"(.*?)\"',  # Primary pattern
-            r'wurl ?= ?\"(.*?)\"',          # Simplified pattern
-            r'src: ?\"(.*?)\"',             # Alternative pattern
-            r'file: ?\"(.*?)\"',            # Another alternative
-            r'https?://[^\"\']+\.mp4[^\"\']*'  # Direct MP4 URL pattern
-        ]
-
-        session = await self._get_session(url)
-        
+        proxy = get_proxy_for_url(url, TRANSPORT_ROUTES, self.proxies, self.bypass_warp_active)
+        session_id, is_persistent = await solver_manager.get_session(proxy)
         try:
-            final_url = await eval_solver(session, url, headers, patterns)
+            # 1. Hybrid Solver for Redirectors
+            ua, cookies = self.base_headers.get("User-Agent"), {}
+            if any(d in url.lower() for d in ["safego.cc", "clicka.cc", "clicka"]):
+                url, ua, cookies = await self._solve_redirector_hybrid(url, session_id)
+
+            if "/f/" in url: url = url.replace("/f/", "/e/")
             
-            if not final_url or len(final_url) < 10:
-                raise ExtractorError(f"Extracted URL appears invalid: {final_url}")
-            
-            logger.info(f"Successfully extracted Mixdrop URL: {final_url[:50]}...")
-            
-            res_headers = self.base_headers.copy()
-            res_headers["Referer"] = url
-            return {
-                "destination_url": final_url,
-                "request_headers": res_headers,
-                "mediaflow_endpoint": self.mediaflow_endpoint,
-            }
-        except Exception as e:
-            raise ExtractorError(f"Mixdrop extraction failed: {str(e)}") from e
-
-    async def _solve_redirector(self, url: str) -> str:
-        """Solves safego.cc or clicka.cc redirectors using FS sessions."""
-        session_id = None
-        current_url = url
-        try:
-            import ddddocr
-        except ImportError:
-            ddddocr = None
-
-        try:
-            res_s = await self._request_flaresolverr("sessions.create")
-            if not res_s: return url
-            session_id = res_s.get("session")
-
-            res = await self._request_flaresolverr("request.get", url, session_id=session_id)
-            if not res: return url
-            solution = res.get("solution", {})
-            text = solution.get("response", "")
-            current_url = solution.get("url", url)
-
-            soup = BeautifulSoup(text, "lxml")
-            
-            img_tag = soup.find("img", src=re.compile(r'data:image/png;base64,'))
-            if img_tag and ddddocr:
-                img_data = base64.b64decode(img_tag["src"].split(",")[1])
-                ocr = ddddocr.DdddOcr(show_ad=False)
-                captcha = ocr.classification(img_data)
-                post_data = urlencode({"captch5": captcha, "submit": "Continue"})
-                
-                pres = await self._request_flaresolverr("request.post", current_url, post_data, session_id=session_id)
-                if pres:
-                    text = pres.get("solution", {}).get("response", "")
-                    soup = BeautifulSoup(text, "lxml")
-
-            for attempt in range(4):
-                proceed_link = None
-                for a_tag in soup.find_all("a", href=True):
-                    txt = a_tag.get_text().lower()
-                    if "proceed to video" in txt or "continue" in txt:
-                        proceed_link = a_tag
-                        break
-                    for btn in a_tag.find_all("button"):
-                        if "proceed" in btn.get_text().lower():
-                             proceed_link = a_tag
-                             break
-                    if proceed_link: break
-                
-                if not proceed_link:
-                    proceed_link = soup.find("a", href=re.compile(r'deltabit|mixdrop|clicka', re.I))
-                
-                if proceed_link:
-                    return urljoin(current_url, proceed_link["href"])
-                
-                meta = soup.find("meta", attrs={"http-equiv": re.compile(r'refresh', re.I)})
-                if meta and "url=" in meta.get("content", "").lower():
-                    r_url = re.search(r'url=(.*)', meta["content"], re.I).group(1).strip()
-                    if r_url: return urljoin(current_url, r_url)
-
-                if attempt < 3:
-                    await asyncio.sleep(4)
-                    res = await self._request_flaresolverr("request.get", current_url, session_id=session_id)
-                    if res:
-                        text = res.get("solution", {}).get("response", "")
-                        soup = BeautifulSoup(text, "lxml")
-            
-            return current_url
-
-        finally:
-            if session_id:
+            # 2. Fast Path Extraction
+            for _ in range(2):
+                # Try aiohttp first (Fast Path)
+                html = ""
                 try:
-                    await self._request_flaresolverr("sessions.destroy", session_id=session_id)
-                except Exception:
-                    pass
+                    headers = {"User-Agent": ua, "Referer": url}
+                    session = await self._get_session()
+                    async with session.get(url, cookies=cookies, headers=headers, timeout=5) as r:
+                        if r.status == 200: html = await r.text()
+                except Exception: pass
+
+                # Fallback to FlareSolverr if Fast Path fails
+                if not html or "Cloudflare" in html:
+                    res = await self._request_flaresolverr("request.get", url, session_id=session_id, wait=0)
+                    solution = res.get("solution", {})
+                    html, ua = solution.get("response", ""), solution.get("userAgent", ua)
+                    cookies.update({c["name"]: c["value"] for c in solution.get("cookies", [])})
+                
+                if "eval(function(p,a,c,k,e,d)" in html:
+                    for block in re.findall(r'eval\(function\(p,a,c,k,e,d\).*?\}\(.*\)\)', html, re.S):
+                        html += "\n" + self._unpack(block)
+
+                patterns = [r'(?:MDCore|vsConfig)\.wurl\s*=\s*["\']([^"\']+)["\']', r'source\s*src\s*=\s*["\']([^"\']+)["\']', r'file:\s*["\']([^"\']+)["\']', r'["\'](https?://[^\s"\']+\.(?:mp4|m3u8)[^\s"\']*)["\']']
+                for p in patterns:
+                    match = re.search(p, html)
+                    if match:
+                        v_url = match.group(1)
+                        if v_url.startswith("//"): v_url = "https:" + v_url
+                        return self._build_result(v_url, url, ua)
+
+                soup = BeautifulSoup(html, "lxml")
+                iframe = soup.find("iframe", src=re.compile(r'/e/|/emb', re.I))
+                if iframe:
+                    url = urljoin(url, iframe["src"])
+                    continue
+                break
+            raise ExtractorError("Mixdrop: Video source not found")
+        finally:
+            if session_id: await solver_manager.release_session(session_id, is_persistent)
+
+    async def _solve_redirector_hybrid(self, url: str, session_id: str) -> tuple:
+        res = await self._request_flaresolverr("request.get", url, session_id=session_id)
+        solution = res.get("solution", {})
+        ua, cookies = solution.get("userAgent"), {c["name"]: c["value"] for c in solution.get("cookies", [])}
+        html, current_url = solution.get("response", ""), solution.get("url", url)
+        
+        headers, session = {"User-Agent": ua, "Referer": url}, await self._get_session()
+        async def light_fetch(target_url, post_data=None):
+            try:
+                if post_data:
+                    async with session.post(target_url, data=post_data, cookies=cookies, headers=headers, timeout=10) as r:
+                        return await r.text(), str(r.url)
+                else:
+                    async with session.get(target_url, cookies=cookies, headers=headers, timeout=10) as r:
+                        return await r.text(), str(r.url)
+            except Exception: return None, target_url
+
+        for step in range(5):
+            if not any(d in current_url.lower() for d in ["safego.cc", "clicka.cc", "clicka"]): break
+            soup = BeautifulSoup(html, "lxml")
+            img_tag = soup.find("img", src=re.compile(r'data:image/png;base64,'))
+            if img_tag:
+                import ddddocr
+                ocr = ddddocr.DdddOcr(show_ad=False)
+                captcha = re.sub(r'[^0-9]', '', ocr.classification(base64.b64decode(img_tag["src"].split(",")[1])).replace('o','0').replace('l','1'))
+                form = soup.find("form")
+                post_fields = {inp.get("name"): inp.get("value", "") for inp in form.find_all("input") if inp.get("name")} if form else {}
+                for key in ["code", "captch5"]:
+                    if key in post_fields or (form and form.find("input", {"name": key})):
+                        post_fields[key] = captcha
+                        break
+                else: post_fields["code"] = captcha
+                html, current_url = await light_fetch(current_url, post_data=post_fields)
+                if not html: break
+                soup = BeautifulSoup(html, "lxml")
+
+            next_url = None
+            for attempt in range(12):
+                for a_tag in soup.find_all(["a", "button"], href=True) or soup.find_all(["a", "button"]):
+                    txt = a_tag.get_text().lower()
+                    if any(x in txt for x in ["proceed", "continue", "prosegui", "avanti", "click here", "clicca qui"]):
+                        next_url = urljoin(current_url, a_tag.get("href", ""))
+                        break
+                if next_url and next_url != current_url:
+                    current_url = next_url
+                    html, current_url = await light_fetch(current_url)
+                    if html: soup = BeautifulSoup(html, "lxml")
+                    break
+                if attempt < 11:
+                    await asyncio.sleep(1.0)
+                    html, current_url = await light_fetch(current_url)
+                    if html: soup = BeautifulSoup(html, "lxml")
+            if not next_url: break
+        return current_url, ua, cookies
+
+    def _build_result(self, video_url: str, referer: str, ua: str) -> dict:
+        headers = {"Referer": referer, "User-Agent": ua, "Origin": f"https://{urlparse(referer).netloc}"}
+        return {"destination_url": video_url, "request_headers": headers, "mediaflow_endpoint": self.mediaflow_endpoint, "bypass_warp": self.bypass_warp_active}
 
     async def close(self):
-        if self.session and not self.session.closed:
-            await self.session.close()
+        if self.session and not self.session.closed: await self.session.close()

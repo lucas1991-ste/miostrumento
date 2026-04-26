@@ -340,17 +340,6 @@
         }
         ::-webkit-scrollbar-thumb:hover { background: var(--border-accent); }
 
-        .version-badge {
-            background: var(--accent-gradient);
-            padding: 2px 10px;
-            border-radius: 20px;
-            font-size: 0.75rem;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-left: 8px;
-        }
-
         .version-info {
             display: flex;
             align-items: center;
@@ -417,7 +406,6 @@
             <div class="status-indicator">
                 <div class="status-dot"></div>
                 <span>Server Operational</span>
-                <span class="version-badge">{{VERSION_MODE}}</span>
                 <div class="version-info">
                     <span>v{{APP_VERSION}}</span>
                     <span class="version-latest {{VERSION_STATUS_CLASS}}">(Latest: {{LATEST_VERSION}})</span>

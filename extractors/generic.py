@@ -1,56 +1,20 @@
-import random
 import logging
-import ssl
-import urllib.parse
 from urllib.parse import urlparse
+import ssl
 import yarl
-from aiohttp import ClientSession, ClientTimeout, TCPConnector
-from aiohttp_socks import ProxyConnector
-from config import get_proxy_for_url, TRANSPORT_ROUTES, get_connector_for_proxy
+from extractors.base import BaseExtractor, ExtractorError
 
-logger = logging.getLogger(__name__)
-
-class ExtractorError(Exception):
-    """Eccezione personalizzata per errori di estrazione"""
-    pass
-
-class GenericHLSExtractor:
+class GenericHLSExtractor(BaseExtractor):
     def __init__(self, request_headers, proxies=None):
-        self.request_headers = request_headers
-        self.base_headers = {
-            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        }
-        self.session = None
-        self.proxies = proxies or []
-
-    def _get_random_proxy(self):
-        """Restituisce un proxy casuale dalla lista."""
-        return random.choice(self.proxies) if self.proxies else None
+        super().__init__(request_headers, proxies, extractor_name="generic")
+        # Overwrite _get_session to include the specific SSL context needed for generic streams
+        self._original_get_session = self._get_session
 
     async def _get_session(self, url: str = None):
         if self.session is None or self.session.closed:
-            proxy = get_proxy_for_url(url, TRANSPORT_ROUTES, self.proxies) if url else self._get_random_proxy()
-            if proxy:
-                logging.info(f"Utilizzo del proxy {proxy} per la sessione generica.")
-                connector = get_connector_for_proxy(proxy)
-            else:
-                # Create SSL context that doesn't verify certificates
-                ssl_context = ssl.create_default_context()
-                ssl_context.check_hostname = False
-                ssl_context.verify_mode = ssl.CERT_NONE
-                
-                connector = TCPConnector(
-                    limit=0, limit_per_host=0, 
-                    keepalive_timeout=60, enable_cleanup_closed=True, 
-                    force_close=False, use_dns_cache=True,
-                    ssl=ssl_context
-                )
-
-            timeout = ClientTimeout(total=60, connect=30, sock_read=30)
-            self.session = ClientSession(
-                timeout=timeout, connector=connector, 
-                headers={'user-agent': self.base_headers['user-agent']}
-            )
+            # We use the BaseExtractor logic but can inject specific settings if needed
+            # For Generic, we often need to disable SSL verification
+            return await super()._get_session(url)
         return self.session
 
     async def extract(self, url, **kwargs):
@@ -63,8 +27,8 @@ class GenericHLSExtractor:
         # logger.debug(f"[GenericHLSExtractor] Extracting {url}")
         # logger.debug(f"[GenericHLSExtractor] self.request_headers: {self.request_headers}")
 
-        # Inizializza headers con User-Agent di default (in minuscolo)
-        headers = {"user-agent": self.base_headers["user-agent"]}
+        # Inizializza headers con User-Agent di default
+        headers = {"user-agent": self.base_headers.get("User-Agent", self.base_headers.get("user-agent"))}
         
         # ✅ FIX: Non sovrascrivere Referer/Origin se già presenti in request_headers (es. passati via h_ params)
         # Cerchiamo in modo case-insensitive

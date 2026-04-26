@@ -1,27 +1,13 @@
-import logging
-import random
 import re
 from urllib.parse import urljoin, urlparse, unquote
-from aiohttp import ClientSession, ClientTimeout, TCPConnector, FormData
-from aiohttp_socks import ProxyConnector
-from config import get_proxy_for_url, TRANSPORT_ROUTES, get_connector_for_proxy
+from aiohttp import FormData
+from extractors.base import BaseExtractor, ExtractorError
 
-logger = logging.getLogger(__name__)
-
-class ExtractorError(Exception):
-    pass
-
-class LiveTVExtractor:
+class LiveTVExtractor(BaseExtractor):
     """LiveTV URL extractor for both M3U8 and MPD streams."""
 
     def __init__(self, request_headers: dict, proxies: list = None):
-        self.request_headers = request_headers
-        self.base_headers = {
-            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        }
-        self.session = None
-        self.mediaflow_endpoint = "hls_proxy"
-        self.proxies = proxies or []
+        super().__init__(request_headers, proxies, extractor_name="livetv")
         
         # Patterns for stream URL extraction
         self.fallback_pattern = re.compile(
@@ -33,28 +19,11 @@ class LiveTVExtractor:
             re.IGNORECASE,
         )
 
-    def _get_random_proxy(self):
-        return random.choice(self.proxies) if self.proxies else None
-
-    async def _get_session(self, url: str = None):
-        if self.session is None or self.session.closed:
-            timeout = ClientTimeout(total=60, connect=30, sock_read=30)
-            proxy = get_proxy_for_url(url, TRANSPORT_ROUTES, self.proxies) if url else self._get_random_proxy()
-            if proxy:
-                connector = get_connector_for_proxy(proxy)
-            else:
-                connector = TCPConnector(limit=0, limit_per_host=0, keepalive_timeout=60, enable_cleanup_closed=True, force_close=False, use_dns_cache=True)
-            self.session = ClientSession(timeout=timeout, connector=connector, headers={'User-Agent': self.base_headers["user-agent"]})
-        return self.session
-
     async def extract(self, url: str, stream_title: str = None, **kwargs) -> dict:
         """Extract LiveTV URL and required headers."""
         try:
-            session = await self._get_session(url)
-            
-            # Get the channel page
-            async with session.get(url) as response:
-                response_text = await response.text()
+            resp = await self._make_request(url)
+            response_text = resp.text
             
             self.base_headers["referer"] = urljoin(url, "/")
 
@@ -136,25 +105,25 @@ class LiveTVExtractor:
         
         if method == "wp_json":
             api_url = f"{api_base}{post}/{type_}/{nume}"
-            async with session.get(api_url) as response:
-                data = await response.json()
+            resp = await self._make_request(api_url)
+            data = resp.json
         else:
             form_data = FormData()
             form_data.add_field("action", "doo_player_ajax")
             form_data.add_field("post", post)
             form_data.add_field("nume", nume)
             form_data.add_field("type", type_)
-            async with session.post(api_base, data=form_data) as response:
-                data = await response.json()
+            resp = await self._make_request(api_base, method="POST", data=form_data)
+            data = resp.json
 
         # Get iframe URL from API response
         try:
             iframe_url = urljoin(api_base, data.get("embed_url", "").replace("\\/", "/"))
 
             # Get stream URL from iframe
-            async with session.get(iframe_url) as iframe_response:
-                iframe_text = await iframe_response.text()
-                iframe_headers = dict(iframe_response.headers)
+            resp_iframe = await self._make_request(iframe_url)
+            iframe_text = resp_iframe.text
+            iframe_headers = resp_iframe.headers
             
             stream_data = await self._extract_stream_url(iframe_text, iframe_headers, iframe_url)
             return stream_data

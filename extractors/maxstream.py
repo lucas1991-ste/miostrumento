@@ -311,35 +311,97 @@ class MaxstreamExtractor:
             
         return None
 
-    async def get_uprot(self, link: str):
-        """Extract MaxStream URL from uprot redirect."""
-        # Fix link type
-        link = link.replace("msf", "mse")
-        
+    def _parse_uprot_folder(self, text: str, season, episode) -> str | None:
+        """
+        Parse a /msfld/ folder HTML and return the /msfi/ link for the
+        requested S{ss}E{ee}. CB01 indexes long anime by absolute episode in
+        season 1 (e.g. Naruto S3E2 = 1x85), so callers should pass the
+        already-resolved absolute episode when applicable.
+        """
+        try:
+            s_int = int(season)
+            e_int = int(episode)
+        except (TypeError, ValueError):
+            return None
+        s_pad = f"{s_int:02d}"
+        e_pad = f"{e_int:02d}"
+        # Order: most specific first. Each pattern is followed by an msfi href
+        # within ~500 chars (the row layout in the folder HTML).
+        patterns = [
+            rf"S{s_pad}E{e_pad}",
+            rf"\b0*{s_int}x0*{e_int}\b",
+            rf"\b0*{s_int}&#215;0*{e_int}\b",
+            rf"\b0*{s_int}×0*{e_int}\b",
+        ]
+        for pat in patterns:
+            m = re.search(
+                rf"{pat}[\s\S]{{0,500}}?href=['\"]([^'\"]+/msfi/[^'\"]+)['\"]",
+                text,
+                re.I,
+            )
+            if m:
+                return m.group(1)
+        return None
+
+    async def get_uprot(self, link: str, season=None, episode=None):
+        """Extract MaxStream URL from uprot redirect.
+
+        Supports three uprot path types:
+          - /msf/{id}    single movie (legacy alias /mse/ still works upstream)
+          - /msfi/{id}   single episode (NOT to be rewritten)
+          - /msfld/{id}  folder of episodes; requires season + episode kwargs to
+                         pick the right /msfi/ link inside the folder HTML
+        """
+        # Map only the modern /msf/ single-video path to its legacy /mse/ alias.
+        # A naive str.replace("msf", "mse") corrupts /msfld/ into /mseld/ (404)
+        # and /msfi/ into /msei/ (a deprecated path that returns 500 for new IDs).
+        link = re.sub(r"/msf/", "/mse/", link)
+
         # Direct request (user should provide non-datacenter proxy in GLOBAL_PROXY)
         text = await self._smart_request(link)
-        
+
+        # If this is a folder URL, resolve the requested episode first, then
+        # continue the normal flow on the picked /msfi/ link.
+        if "/msfld/" in link:
+            if season is None or episode is None:
+                raise ExtractorError(
+                    "msfld folder URL requires 'season' and 'episode' parameters"
+                )
+            episode_link = self._parse_uprot_folder(text, season, episode)
+            if not episode_link:
+                raise ExtractorError(
+                    f"Episode S{season}E{episode} not found in msfld folder"
+                )
+            link = episode_link
+            text = await self._smart_request(link)
+
         # 1. Try normal parse
         res = self._parse_uprot_html(text)
         if res:
             return res
-            
+
         # 2. If no link, try puzzle/captcha solver
         logger.debug("Direct link not found, checking for captcha...")
         res = await self._solve_uprot_captcha(text, link)
         if res:
             return res
-            
+
         # If we see "Cloudflare" or "Challenge" in text, it's a block
         if "cf-challenge" in text or "ray id" in text.lower() or "checking your browser" in text.lower():
             raise ExtractorError("Cloudflare block (Browser check/Challenge)")
-            
+
         logger.error(f"Uprot Parse Failure. Content: {text[:2000]}...")
         raise ExtractorError("Redirect link not found in uprot page")
 
     async def extract(self, url: str, **kwargs) -> dict:
-        """Extract Maxstream URL."""
-        maxstream_url = await self.get_uprot(url)
+        """Extract Maxstream URL.
+
+        For /msfld/ folder URLs, callers must pass season=N&episode=M as
+        query parameters (forwarded by MFP routes as kwargs).
+        """
+        season = kwargs.get("season")
+        episode = kwargs.get("episode")
+        maxstream_url = await self.get_uprot(url, season=season, episode=episode)
         logger.debug(f"Target URL: {maxstream_url}")
         
         # Use strict headers to avoid Error 131

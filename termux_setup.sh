@@ -66,7 +66,7 @@ proot-distro login "$DISTRO_NAME" -- bash -c '
 
     echo "[INFO] Inside Ubuntu: Installing Python, browser, Node.js and runtime packages..."
     apt-get install -y --fix-missing \
-        python3 python3-venv python3.13-venv python-is-python3 python3-pip git curl wget ffmpeg nodejs \
+        python3 python3-venv python3.13-venv python-is-python3 python3-pip git curl wget ffmpeg \
         libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 \
         libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2t64 libpango-1.0-0 libcairo2 \
         libatspi2.0-0 fonts-liberation ca-certificates chromium chromium-driver procps \
@@ -104,9 +104,8 @@ proot-distro login "$DISTRO_NAME" -- bash -c '
     cd "$EP_DIR"
     python3 -m pip install --no-cache-dir --ignore-installed -r requirements.txt --break-system-packages || true
 
-    echo "[INFO] Installing Playwright Chromium..."
-    python3 -m playwright install chromium || true
-    python3 -m playwright install-deps 2>/dev/null || true
+    echo "[INFO] Playwright will use system Chromium (/usr/bin/chromium)..."
+    # No need to install playwright chromium, saves ~500MB
 
     echo "[INFO] Setting up FlareSolverr..."
     if [ ! -d "$EP_DIR/flaresolverr/.git" ]; then

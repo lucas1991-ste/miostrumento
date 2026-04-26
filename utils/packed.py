@@ -16,6 +16,9 @@ import re
 from bs4 import BeautifulSoup, SoupStrainer
 from urllib.parse import urljoin, urlparse
 import logging
+import asyncio
+from aiohttp_socks import ProxyError as AioProxyError
+from python_socks import ProxyError as PyProxyError
 
 
 logger = logging.getLogger(__name__)
@@ -196,7 +199,7 @@ async def eval_solver(session, url: str, headers: dict, patterns: list[str]) -> 
         logger.warning("Found packed JavaScript but no patterns matched at %s. Patterns tried: %s", url, patterns)
         raise UnpackingError(f"Found packed JavaScript but could not extract video URL. The extraction patterns may need updating.")
         
-    except UnpackingError:
+    except (UnpackingError, AioProxyError, PyProxyError, asyncio.TimeoutError):
         raise
     except Exception as e:
         logger.exception("Unexpected error in eval_solver for %s", url)

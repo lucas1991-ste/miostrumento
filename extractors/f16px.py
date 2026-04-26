@@ -1,46 +1,15 @@
-# https://github.com/Gujal00/ResolveURL/blob/55c7f66524ebd65bc1f88650614e627b00167fa0/script.module.resolveurl/lib/resolveurl/plugins/f16px.py
-
+import re
 import base64
 import json
-import logging
-import random
-import re
 from urllib.parse import urlparse
-from aiohttp import ClientSession, ClientTimeout, TCPConnector
-from aiohttp_socks import ProxyConnector
-from config import get_proxy_for_url, TRANSPORT_ROUTES, get_connector_for_proxy
+from extractors.base import BaseExtractor, ExtractorError
 from utils import python_aesgcm
 
-logger = logging.getLogger(__name__)
-
-class ExtractorError(Exception):
-    pass
-
-class F16PxExtractor:
+class F16PxExtractor(BaseExtractor):
     """F16Px URL extractor with AES-GCM decryption support."""
 
     def __init__(self, request_headers: dict, proxies: list = None):
-        self.request_headers = request_headers
-        self.base_headers = {
-            "user-agent": "Mozilla/5.0 (X11; Linux x86_64; rv:138.0) Gecko/20100101 Firefox/138.0"
-        }
-        self.session = None
-        self.mediaflow_endpoint = "hls_proxy"
-        self.proxies = proxies or []
-
-    def _get_random_proxy(self):
-        return random.choice(self.proxies) if self.proxies else None
-
-    async def _get_session(self, url: str = None):
-        if self.session is None or self.session.closed:
-            timeout = ClientTimeout(total=60, connect=30, sock_read=30)
-            proxy = get_proxy_for_url(url, TRANSPORT_ROUTES, self.proxies) if url else self._get_random_proxy()
-            if proxy:
-                connector = get_connector_for_proxy(proxy)
-            else:
-                connector = TCPConnector(limit=0, limit_per_host=0, keepalive_timeout=60, enable_cleanup_closed=True, force_close=False, use_dns_cache=True)
-            self.session = ClientSession(timeout=timeout, connector=connector, headers={'User-Agent': self.base_headers["user-agent"]})
-        return self.session
+        super().__init__(request_headers, proxies, extractor_name="f16px")
 
     @staticmethod
     def _b64url_decode(value: str) -> bytes:
@@ -69,16 +38,14 @@ class F16PxExtractor:
         media_id = match.group(1)
         api_url = f"https://{host}/api/videos/{media_id}/playback"
 
-        session = await self._get_session()
-        
         headers = self.base_headers.copy()
         headers["referer"] = f"https://{host}/"
 
-        async with session.get(api_url, headers=headers) as resp:
-            try:
-                data = await resp.json()
-            except Exception:
-                raise ExtractorError("F16PX: Invalid JSON response")
+        resp = await self._make_request(api_url, headers=headers)
+        try:
+            data = json.loads(resp.text)
+        except Exception:
+            raise ExtractorError("F16PX: Invalid JSON response")
 
         # Case 1: plain sources
         if "sources" in data and data["sources"]:
@@ -127,7 +94,7 @@ class F16PxExtractor:
         self.base_headers["origin"] = origin
         self.base_headers["Accept-Language"] = "en-US,en;q=0.5"
         self.base_headers["Accept"] = "*/*"
-        self.base_headers["user-agent"] = "Mozilla/5.0 (X11; Linux x86_64; rv:138.0) Gecko/20100101 Firefox/138.0"
+        self.base_headers["User-Agent"] = "Mozilla/5.0 (X11; Linux x86_64; rv:138.0) Gecko/20100101 Firefox/138.0"
 
         return {
             "destination_url": best,
