@@ -101,25 +101,60 @@ class DeltabitExtractor:
         html, current_url = solution.get("response", ""), solution.get("url", url)
         headers, session = {"User-Agent": ua, "Referer": url}, await self._get_session()
         async def light_fetch(target_url, post_data=None):
-            try:
-                if post_data:
-                    async with session.post(target_url, data=post_data, cookies=cookies, headers=headers, timeout=10) as r:
-                        return await r.text(), str(r.url)
-                else:
-                    async with session.get(target_url, cookies=cookies, headers=headers, timeout=10) as r:
-                        return await r.text(), str(r.url)
-            except Exception: return None, target_url
-        for step in range(5):
-            if not any(d in current_url.lower() for d in ["safego.cc", "clicka.cc", "clicka"]): break
+            for _ in range(2): # Retry once with FS if CF detected
+                try:
+                    if post_data:
+                        async with session.post(target_url, data=post_data, cookies=cookies, headers=headers, timeout=12) as r:
+                            text = await r.text()
+                            if "cf-challenge" in text or "ray id" in text.lower() or "checking your browser" in text.lower():
+                                logger.info(f"Cloudflare detected in redirect step for {target_url}, using FlareSolverr...")
+                                fs_res = await self._request_flaresolverr("request.post", target_url, urlencode(post_data), session_id=session_id)
+                                sol = fs_res.get("solution", {})
+                                cookies.update({c["name"]: c["value"] for c in sol.get("cookies", [])})
+                                return sol.get("response", ""), sol.get("url", target_url)
+                            return text, str(r.url)
+                    else:
+                        async with session.get(target_url, cookies=cookies, headers=headers, timeout=12) as r:
+                            text = await r.text()
+                            if "cf-challenge" in text or "ray id" in text.lower() or "checking your browser" in text.lower():
+                                logger.info(f"Cloudflare detected in redirect step for {target_url}, using FlareSolverr...")
+                                fs_res = await self._request_flaresolverr("request.get", target_url, session_id=session_id)
+                                sol = fs_res.get("solution", {})
+                                cookies.update({c["name"]: c["value"] for c in sol.get("cookies", [])})
+                                return sol.get("response", ""), sol.get("url", target_url)
+                            return text, str(r.url)
+                except Exception as e:
+                    logger.debug(f"Light fetch failed: {e}, falling back to FlareSolverr...")
+                    try:
+                        fs_cmd = "request.post" if post_data else "request.get"
+                        fs_res = await self._request_flaresolverr(fs_cmd, target_url, urlencode(post_data) if post_data else None, session_id=session_id)
+                        sol = fs_res.get("solution", {})
+                        cookies.update({c["name"]: c["value"] for c in sol.get("cookies", [])})
+                        return sol.get("response", ""), sol.get("url", target_url)
+                    except: return None, target_url
+            return None, target_url
+
+        for step in range(6):
+            if not any(d in current_url.lower() for d in ["safego.cc", "clicka.cc", "clicka", "uprot.net"]): break
             soup = BeautifulSoup(html, "lxml")
-            img_tag = soup.find("img", src=re.compile(r'data:image/png;base64,'))
+            
+            # 1. Handle CAPTCHA if present
+            img_tag = soup.find("img", src=re.compile(r'data:image/png;base64,|captcha\.php'))
             if img_tag:
                 import ddddocr
                 ocr = ddddocr.DdddOcr(show_ad=False)
-                captcha = re.sub(r'[^0-9]', '', ocr.classification(base64.b64decode(img_tag["src"].split(",")[1])).replace('o','0').replace('l','1'))
+                if "base64," in img_tag["src"]:
+                    captcha_data = base64.b64decode(img_tag["src"].split(",")[1])
+                else:
+                    # Download image
+                    c_url = urljoin(current_url, img_tag["src"])
+                    async with session.get(c_url, cookies=cookies, headers=headers) as r:
+                        captcha_data = await r.read()
+                
+                captcha = re.sub(r'[^0-9]', '', ocr.classification(captcha_data)).replace('o','0').replace('l','1')
                 form = soup.find("form")
                 post_fields = {inp.get("name"): inp.get("value", "") for inp in form.find_all("input") if inp.get("name")} if form else {}
-                for key in ["code", "captch5"]:
+                for key in ["code", "captch5", "captcha"]:
                     if key in post_fields or (form and form.find("input", {"name": key})):
                         post_fields[key] = captcha
                         break
@@ -127,22 +162,43 @@ class DeltabitExtractor:
                 html, current_url = await light_fetch(current_url, post_data=post_fields)
                 if not html: break
                 soup = BeautifulSoup(html, "lxml")
+
+            # 2. Handle "Step" buttons and "Proceed" buttons
             next_url = None
-            for attempt in range(12):
-                for a_tag in soup.find_all(["a", "button"], href=True) or soup.find_all(["a", "button"]):
-                    txt = a_tag.get_text().lower()
-                    if any(x in txt for x in ["proceed", "continue", "prosegui", "avanti", "click here", "clicca qui"]):
-                        next_url = urljoin(current_url, a_tag.get("href", ""))
-                        break
-                if next_url and next_url != current_url:
+            button_markers = ["proceed", "continue", "prosegui", "avanti", "click here", "clicca qui", "step", "passaggio", "vai al"]
+            
+            for attempt in range(15):
+                meta_refresh = soup.find("meta", attrs={"http-equiv": "refresh"})
+                if meta_refresh and "url=" in meta_refresh.get("content", "").lower():
+                    next_url = urljoin(current_url, meta_refresh["content"].lower().split("url=")[1].strip())
+                    break
+
+                for a_tag in soup.find_all(["a", "button", "div"], href=True) or soup.find_all(["a", "button", "div"]):
+                    txt = a_tag.get_text().strip().lower()
+                    if not txt and a_tag.get("value"): txt = a_tag.get("value").lower()
+                    
+                    if any(x in txt for x in button_markers):
+                        href = a_tag.get("href")
+                        if not href and a_tag.name == "button":
+                            onclick = a_tag.get("onclick", "")
+                            oc_match = re.search(r'location\.href\s*=\s*["\']([^"\']+)["\']', onclick)
+                            if oc_match: href = oc_match.group(1)
+                        
+                        if href:
+                            next_url = urljoin(current_url, href)
+                            break
+                
+                if next_url and next_url != current_url and "uprot.net" not in next_url:
                     current_url = next_url
                     html, current_url = await light_fetch(current_url)
                     if html: soup = BeautifulSoup(html, "lxml")
                     break
-                if attempt < 11:
+                
+                if attempt < 14:
                     await asyncio.sleep(1.0)
                     html, current_url = await light_fetch(current_url)
                     if html: soup = BeautifulSoup(html, "lxml")
+            
             if not next_url: break
         return current_url, ua, cookies
 

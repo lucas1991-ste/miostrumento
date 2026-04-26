@@ -11,7 +11,8 @@ from config import (
     TRANSPORT_ROUTES, 
     get_connector_for_proxy,
     SELECTED_PROXY_CONTEXT,
-    GLOBAL_PROXIES
+    GLOBAL_PROXIES,
+    mark_proxy_dead
 )
 from utils.proxy_manager import FreeProxyManager
 
@@ -116,6 +117,9 @@ class BaseExtractor:
                 self.session = None
                 
                 if is_proxy_err and SELECTED_PROXY_CONTEXT.get():
+                    proxy_to_mark = SELECTED_PROXY_CONTEXT.get()
+                    if proxy_to_mark and "127.0.0.1" in proxy_to_mark:
+                        mark_proxy_dead(proxy_to_mark)
                     SELECTED_PROXY_CONTEXT.set(None)
                 
                 if should_fallback and attempt == 0:

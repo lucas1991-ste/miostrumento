@@ -52,6 +52,7 @@ from config import (
     WARP_PROXY_URL,
     BYPASS_WARP_CONTEXT,
     SELECTED_PROXY_CONTEXT,
+    mark_proxy_dead,
 )
 from extractors.generic import GenericHLSExtractor, ExtractorError
 from services.manifest_rewriter import ManifestRewriter
@@ -1678,10 +1679,22 @@ class HLSProxy:
                                 manifest_content = await resp.text()
                                 break # Success
                         
-                        except (AioProxyError, PyProxyError, asyncio.TimeoutError) as e:
+                        except (AioProxyError, PyProxyError, asyncio.TimeoutError, ClientConnectionError, OSError) as e:
                             is_proxy = isinstance(e, (AioProxyError, PyProxyError))
+                            # Consider ClientConnectionError/OSError as proxy errors if a proxy was used
+                            if not is_proxy and mpd_proxy and isinstance(e, (ClientConnectionError, OSError)):
+                                is_proxy = True
+                                
                             err_type = "Proxy" if is_proxy else "Timeout"
                             logger.warning(f"⚠️ [MPD] {err_type} error at attempt {attempt+1}: {e}")
+                            
+                            # Mark local proxy as dead if it failed
+                            if mpd_proxy and "127.0.0.1" in mpd_proxy:
+                                mark_proxy_dead(mpd_proxy)
+                                # Also clear the cached session for this proxy
+                                if mpd_proxy in self.proxy_sessions:
+                                    logger.info(f"   [MPD] Removing broken proxy session from cache: {mpd_proxy}")
+                                    self.proxy_sessions.pop(mpd_proxy, None)
                             
                             # Clear sticky context if it's a proxy error
                             if is_proxy and SELECTED_PROXY_CONTEXT.get():
@@ -1711,6 +1724,17 @@ class HLSProxy:
                         except Exception as e:
                             logger.error(f"❌ [MPD] Unexpected error at attempt {attempt+1}: {e}")
                             if attempt == retries - 1:
+                                # Try one last direct fallback even for unexpected errors
+                                try:
+                                    async with self.session.get(
+                                        stream_url, headers=stream_headers, ssl=ssl_context, allow_redirects=True
+                                    ) as resp:
+                                        if resp.status == 200:
+                                            manifest_content = await resp.text()
+                                            final_mpd_url = str(resp.url)
+                                            logger.info("   [MPD] Direct fallback successful after unexpected error!")
+                                            break
+                                except: pass
                                 return web.Response(text=f"Unexpected error fetching MPD: {e}", status=500)
                             await asyncio.sleep(1)
 

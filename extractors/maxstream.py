@@ -209,14 +209,38 @@ class MaxstreamExtractor:
             logger.error("ddddocr not installed. Cannot solve captcha.")
             return None
             
+        # Use lxml and search specifically for the captcha pattern
         soup = BeautifulSoup(text, "lxml")
-        img_tag = soup.find("img", src=re.compile(r'/captcha|/image/'))
-        form = soup.find("form")
         
-        if not img_tag or not form:
+        # 1. Try to find captcha image
+        img_tag = soup.find("img", src=re.compile(r'/captcha|/image/|captcha\.php'))
+        if not img_tag:
+            # Fallback to regex for captcha image
+            img_match = re.search(r'<img[^>]+src=["\']([^"\']*(?:captcha|image|captcha\.php)[^"\']*)["\']', text)
+            if img_match:
+                img_url = img_match.group(1)
+            else:
+                img_url = None
+        else:
+            img_url = img_tag["src"]
+            
+        # 2. Try to find form
+        form = soup.find("form")
+        if not form:
+            # Fallback to regex for form action
+            form_match = re.search(r'<form[^>]+action=["\']([^"\']*)["\']', text)
+            if form_match:
+                form_action = form_match.group(1)
+            else:
+                form_action = original_url # Assume same URL
+        else:
+            form_action = form.get("action", "")
+            
+        if not img_url:
+            logger.debug("Captcha image not found in uprot page")
             return None
             
-        captcha_url = img_tag["src"]
+        captcha_url = img_url
         if captcha_url.startswith("/"):
             parsed = urlparse(original_url)
             captcha_url = f"{parsed.scheme}://{parsed.netloc}{captcha_url}"
@@ -225,18 +249,19 @@ class MaxstreamExtractor:
         img_data = await self._smart_request(captcha_url, is_binary=True)
         
         if not img_data:
+            logger.debug("Failed to download captcha image")
             return None
             
         # Initialize ddddocr (lazy init for performance)
         if not hasattr(self, '_ocr_engine'):
+            import ddddocr
             self._ocr_engine = ddddocr.DdddOcr(show_ad=False)
             
         # Solve
         res = self._ocr_engine.classification(img_data)
         logger.debug(f"Captcha solved: {res}")
         
-        # Submit form
-        form_action = form.get("action", "")
+        # Prepare form action
         if not form_action or form_action == "#":
             form_action = original_url
         elif form_action.startswith("/"):
@@ -244,20 +269,26 @@ class MaxstreamExtractor:
             form_action = f"{parsed.scheme}://{parsed.netloc}{form_action}"
             
         # Prepare data (find the captcha input name)
+        # Search in soup or use regex if soup failed
         captcha_input = soup.find("input", {"name": re.compile(r'captcha|code|val', re.I)})
         if not captcha_input:
-            # Fallback to common names
-            field_name = "captcha"
+            field_match = re.search(r'name=["\'](captcha|code|val|captch5)[^"\']*["\']', text, re.I)
+            field_name = field_match.group(1) if field_match else "captcha"
         else:
             field_name = captcha_input["name"]
             
         post_data = {field_name: res}
         # Add other hidden fields
-        for hidden in form.find_all("input", type="hidden"):
-            if hidden.get("name"):
-                post_data[hidden["name"]] = hidden.get("value", "")
+        if form:
+            for hidden in form.find_all("input", type="hidden"):
+                if hidden.get("name"):
+                    post_data[hidden["name"]] = hidden.get("value", "")
+        else:
+            # Regex for hidden fields
+            for m in re.finditer(r'<input[^>]+type=["\']hidden["\'][^>]+name=["\']([^"\']+)["\'][^>]+value=["\']([^"\']*)["\']', text):
+                post_data[m.group(1)] = m.group(2)
         
-        logger.debug(f"Submitting captcha to: {form_action}")
+        logger.debug(f"Submitting captcha to: {form_action} with data: {post_data}")
         headers = {**self.base_headers, "referer": original_url}
         solved_text = await self._smart_request(form_action, method="POST", data=post_data, headers=headers)
         
