@@ -45,19 +45,27 @@ class DoodStreamExtractor:
         self.proxy_manager = FreeProxyManager.get_instance(
             "dood",
             [
-                os.environ.get(
-                    "DOOD_FREE_PROXY_URL",
-                    "https://raw.githubusercontent.com/proxifly/free-proxy-list/refs/heads/main/proxies/all/data.txt",
-                ),
-                "https://api.proxyscrape.com/v4/free-proxy-list/get?request=display_proxies&proxy_format=protocolipport&format=text"
+                "https://raw.githubusercontent.com/proxifly/free-proxy-list/refs/heads/main/proxies/all/data.txt",
+                "https://api.proxyscrape.com/v4/free-proxy-list/get?request=display_proxies&proxy_format=protocolipport&format=text",
+                "https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/socks5.txt",
+                "https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/socks4.txt",
+                "https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/http.txt",
+                "https://raw.githubusercontent.com/hookzof/socks5_list/master/proxy.txt",
+                "https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/socks5.txt",
+                "https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies.txt",
+                "https://raw.githubusercontent.com/clarketm/proxy-list/master/proxy-list-raw.txt",
+                "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/all.txt",
+                "https://raw.githubusercontent.com/mmpx12/proxy-list/master/https.txt",
+                "https://raw.githubusercontent.com/mmpx12/proxy-list/master/socks4.txt",
+                "https://raw.githubusercontent.com/mmpx12/proxy-list/master/socks5.txt"
             ],
             cache_ttl=int(os.environ.get("DOOD_FREE_PROXY_CACHE_TTL", "7200")),
             max_fetch=_FREE_PROXY_MAX_FETCH,
             max_good=_FREE_PROXY_MAX_GOOD,
         )
 
-    def _get_proxy(self, url: str) -> str | None:
-        return get_proxy_for_url(url, TRANSPORT_ROUTES, GLOBAL_PROXIES)
+    def _get_proxy(self, url: str, bypass_warp: bool = None) -> str | None:
+        return get_proxy_for_url(url, TRANSPORT_ROUTES, GLOBAL_PROXIES, bypass_warp=bypass_warp)
 
     def _normalize_proxy_url(self, proxy_value: str) -> str:
         proxy_value = proxy_value.strip()
@@ -67,11 +75,11 @@ class DoodStreamExtractor:
             return f"socks5h://{proxy_value}"
         return proxy_value
 
-    def _build_scraper_proxies(self, url: str, proxy_url: str | None = None) -> dict | None:
+    def _build_scraper_proxies(self, url: str, proxy_url: str | None = None, bypass_warp: bool = None) -> dict | None:
         if not proxy_url and self.proxies:
             proxy_url = self.proxies[0]
         if not proxy_url:
-            proxy_url = self._get_proxy(url)
+            proxy_url = self._get_proxy(url, bypass_warp=bypass_warp)
         if not proxy_url:
             return None
         proxy_url = self._normalize_proxy_url(proxy_url)
@@ -118,7 +126,10 @@ class DoodStreamExtractor:
         return str(int(time.time()))
 
     def _is_valid_dood_page(self, html: str) -> bool:
-        return bool(html and "pass_md5" in html and "makePlay(" in html and "token=" in html)
+        if not html: return False
+        # Extended markers for newer domains
+        markers = ["pass_md5", "makePlay(", "token=", "get_player(", "vtt", "subtitle"]
+        return any(m in html for m in markers)
 
     def _log_parse_debug(self, html: str) -> None:
         markers = {
@@ -150,12 +161,15 @@ class DoodStreamExtractor:
         def probe_sync(proxy_url: str) -> bool:
             try:
                 scraper = cloudscraper.create_scraper(delay=2)
+                # Ensure we follow redirects (default is True, but explicit is better)
                 resp = scraper.get(
                     embed_url,
                     headers={"User-Agent": _DOOD_UA},
-                    timeout=6,
+                    timeout=12, # Increased timeout for free proxies
                     proxies={"http": proxy_url, "https": proxy_url},
+                    allow_redirects=True
                 )
+                # Some proxies return 301/302 that scraper follows. We check final response.
                 return resp.status_code == 200 and self._is_valid_dood_page(resp.text)
             except Exception:
                 return False
@@ -223,16 +237,31 @@ class DoodStreamExtractor:
 
         embed_url = url if "/e/" in url else f"https://{parsed.netloc}/e/{video_id}"
 
+        bypass_warp = kwargs.get("bypass_warp")
+
         try:
             logger.info(f"DoodStream: Trying cloudscraper extraction for {embed_url}")
 
+            # 1. First attempt: Use default proxy (WARP if enabled) or user-specified bypass_warp
             result = await self._do_extract_with_proxy(
                 embed_url,
-                self._build_scraper_proxies(embed_url),
+                self._build_scraper_proxies(embed_url, bypass_warp=bypass_warp),
             )
             if result:
                 return result
 
+            # 2. Fallback: If first attempt failed and we haven't tried bypassing WARP yet, try direct connection
+            if not bypass_warp:
+                logger.info(f"DoodStream: first attempt failed, retrying with warp=off (direct) for {embed_url}")
+                result = await self._do_extract_with_proxy(
+                    embed_url,
+                    self._build_scraper_proxies(embed_url, bypass_warp=True),
+                )
+                if result:
+                    result["bypass_warp"] = True  # Signal to the proxy to keep using direct for segments
+                    return result
+
+            # 3. Last resort: try auto proxy pool
             for proxy_url in await self._get_auto_proxy_pool(embed_url):
                 logger.info(f"DoodStream: retrying with auto proxy {proxy_url}")
                 try:
